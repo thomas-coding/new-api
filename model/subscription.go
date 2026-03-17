@@ -504,6 +504,42 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	return sub, nil
 }
 
+func GrantUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, bool, error) {
+	if tx == nil {
+		return nil, false, errors.New("tx is nil")
+	}
+	if plan == nil || plan.Id == 0 {
+		return nil, false, errors.New("invalid plan")
+	}
+	if userId <= 0 {
+		return nil, false, errors.New("invalid user id")
+	}
+	nowUnix := GetDBTimestamp()
+	var sub UserSubscription
+	query := tx.Set("gorm:query_option", "FOR UPDATE").
+		Where("user_id = ? AND plan_id = ? AND status = ? AND end_time > ?", userId, plan.Id, "active", nowUnix).
+		Order("end_time desc, id desc").
+		Limit(1).
+		Find(&sub)
+	if query.Error != nil {
+		return nil, false, query.Error
+	}
+	if query.RowsAffected == 0 {
+		created, err := CreateUserSubscriptionFromPlanTx(tx, userId, plan, source)
+		return created, false, err
+	}
+	endUnix, err := calcPlanEndTime(time.Unix(sub.EndTime, 0), plan)
+	if err != nil {
+		return nil, false, err
+	}
+	sub.EndTime = endUnix
+	sub.UpdatedAt = common.GetTimestamp()
+	if err := tx.Save(&sub).Error; err != nil {
+		return nil, false, err
+	}
+	return &sub, true, nil
+}
+
 // Complete a subscription order (idempotent). Creates a UserSubscription snapshot from the plan.
 func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 	if tradeNo == "" {

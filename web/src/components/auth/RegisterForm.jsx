@@ -131,14 +131,21 @@ const RegisterForm = () => {
   }, [statusState?.status]);
   const hasCustomOAuthProviders =
     (status.custom_oauth_providers || []).length > 0;
+  const registerEnabled = status.register_enabled !== false;
+  const passwordRegisterEnabled = status.password_register_enabled !== false;
   const hasOAuthRegisterOptions = Boolean(
-    status.github_oauth ||
-      status.discord_oauth ||
-      status.oidc_enabled ||
-      status.wechat_login ||
-      status.linuxdo_oauth ||
-      status.telegram_oauth ||
-      hasCustomOAuthProviders,
+    registerEnabled &&
+      (status.github_oauth ||
+        status.discord_oauth ||
+        status.oidc_enabled ||
+        status.wechat_login ||
+        status.linuxdo_oauth ||
+        status.telegram_oauth ||
+        hasCustomOAuthProviders),
+  );
+  const hasAnyRegisterOptions = Boolean(
+    registerEnabled &&
+      (passwordRegisterEnabled || hasOAuthRegisterOptions),
   );
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
@@ -154,6 +161,12 @@ const RegisterForm = () => {
     setHasUserAgreement(status?.user_agreement_enabled || false);
     setHasPrivacyPolicy(status?.privacy_policy_enabled || false);
   }, [status]);
+
+  useEffect(() => {
+    if (!passwordRegisterEnabled) {
+      setShowEmailRegister(false);
+    }
+  }, [passwordRegisterEnabled]);
 
   useEffect(() => {
     let countdownInterval = null;
@@ -216,6 +229,10 @@ const RegisterForm = () => {
   }
 
   async function handleSubmit(e) {
+    if (!registerEnabled || !passwordRegisterEnabled) {
+      showInfo(t('注册已关闭，请联系管理员领取账号'));
+      return;
+    }
     if (password.length < 8) {
       showInfo('密码长度不得小于 8 位！');
       return;
@@ -520,20 +537,24 @@ const RegisterForm = () => {
                   </div>
                 )}
 
-                <Divider margin='12px' align='center'>
-                  {t('或')}
-                </Divider>
+                {passwordRegisterEnabled && (
+                  <>
+                    <Divider margin='12px' align='center'>
+                      {t('或')}
+                    </Divider>
 
-                <Button
-                  theme='solid'
-                  type='primary'
-                  className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
-                  icon={<IconMail size='large' />}
-                  onClick={handleEmailRegisterClick}
-                  loading={emailRegisterLoading}
-                >
-                  <span className='ml-3'>{t('使用 用户名 注册')}</span>
-                </Button>
+                    <Button
+                      theme='solid'
+                      type='primary'
+                      className='w-full h-12 flex items-center justify-center bg-black text-white !rounded-full hover:bg-gray-800 transition-colors'
+                      icon={<IconMail size='large' />}
+                      onClick={handleEmailRegisterClick}
+                      loading={emailRegisterLoading}
+                    >
+                      <span className='ml-3'>{t('使用 用户名 注册')}</span>
+                    </Button>
+                  </>
+                )}
               </div>
 
               <div className='mt-6 text-center text-sm'>
@@ -692,8 +713,8 @@ const RegisterForm = () => {
                 </div>
               </Form>
 
-              {hasOAuthRegisterOptions && (
-                <>
+                {hasOAuthRegisterOptions && (
+                  <>
                   <Divider margin='12px' align='center'>
                     {t('或')}
                   </Divider>
@@ -781,10 +802,27 @@ const RegisterForm = () => {
         style={{ top: '50%', left: '-120px' }}
       />
       <div className='w-full max-w-sm mt-[60px]'>
-        {showEmailRegister ||
-        !hasOAuthRegisterOptions
-          ? renderEmailRegisterForm()
-          : renderOAuthOptions()}
+        {!hasAnyRegisterOptions ? (
+          <Card className='border-0 !rounded-2xl overflow-hidden'>
+            <div className='px-6 py-10 text-center space-y-4'>
+              <Title heading={3} className='text-gray-800 dark:text-gray-200'>
+                {t('注册已关闭')}
+              </Title>
+              <Text className='text-gray-600 dark:text-gray-300'>
+                {t('当前系统已关闭注册，请联系管理员领取预置账号后登录。')}
+              </Text>
+              <Link to='/login'>
+                <Button theme='solid' type='primary' className='!rounded-full'>
+                  {t('返回登录')}
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        ) : showEmailRegister || !hasOAuthRegisterOptions ? (
+          renderEmailRegisterForm()
+        ) : (
+          renderOAuthOptions()
+        )}
         {renderWeChatLoginModal()}
 
         {turnstileEnabled && (

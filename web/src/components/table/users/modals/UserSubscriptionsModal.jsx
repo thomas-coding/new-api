@@ -297,7 +297,7 @@ const UserSubscriptionsModal = ({ visible, onCancel, user, t, onSuccess }) => {
         },
       },
       {
-        title: t('总额度'),
+        title: t('今日额度'),
         key: 'total',
         width: 120,
         render: (_, record) => {

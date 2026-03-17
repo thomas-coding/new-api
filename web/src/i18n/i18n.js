@@ -34,6 +34,10 @@ i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
+    detection: {
+      order: ['querystring', 'localStorage', 'cookie'],
+      caches: ['localStorage', 'cookie'],
+    },
     load: 'currentOnly',
     supportedLngs: supportedLanguages,
     resources: {

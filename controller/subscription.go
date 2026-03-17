@@ -151,11 +151,8 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
-	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
-	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
-		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
-		return
-	}
+	req.Plan.QuotaResetPeriod = model.SubscriptionResetDaily
+	req.Plan.QuotaResetCustomSeconds = 0
 	err := model.DB.Create(&req.Plan).Error
 	if err != nil {
 		common.ApiError(c, err)
@@ -214,11 +211,8 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			return
 		}
 	}
-	req.Plan.QuotaResetPeriod = model.NormalizeResetPeriod(req.Plan.QuotaResetPeriod)
-	if req.Plan.QuotaResetPeriod == model.SubscriptionResetCustom && req.Plan.QuotaResetCustomSeconds <= 0 {
-		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
-		return
-	}
+	req.Plan.QuotaResetPeriod = model.SubscriptionResetDaily
+	req.Plan.QuotaResetCustomSeconds = 0
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)

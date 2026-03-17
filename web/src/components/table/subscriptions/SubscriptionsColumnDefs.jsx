@@ -31,6 +31,7 @@ import {
 } from '@douyinfe/semi-ui';
 import { renderQuota } from '../../../helpers';
 import { convertUSDToCurrency } from '../../../helpers/render';
+import { formatSubscriptionQuotaLabel } from '../../../helpers/subscriptionFormat';
 
 const { Text } = Typography;
 
@@ -81,7 +82,7 @@ const renderPlanTitle = (text, record, t) => {
         <Text strong style={{ color: 'var(--semi-color-success)' }}>
           {convertUSDToCurrency(Number(plan?.price_amount || 0), 2)}
         </Text>
-        <Text type='tertiary'>{t('总额度')}</Text>
+        <Text type='tertiary'>{formatSubscriptionQuotaLabel(plan, t)}</Text>
         {plan?.total_amount > 0 ? (
           <Tooltip content={`${t('原生额度')}：${plan.total_amount}`}>
             <Text>{renderQuota(plan.total_amount)}</Text>
@@ -336,7 +337,7 @@ export const getSubscriptionsColumns = ({
         renderPaymentConfig(text, record, t, enableEpay),
     },
     {
-      title: t('总额度'),
+      title: t('每日额度'),
       width: 100,
       render: (text, record) => renderTotalAmount(text, record, t),
     },

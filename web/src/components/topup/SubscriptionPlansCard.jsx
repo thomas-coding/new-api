@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React, { useMemo, useState } from 'react';
 import {
+  Banner,
   Badge,
   Button,
   Card,
@@ -31,15 +32,23 @@ import {
   Typography,
 } from '@douyinfe/semi-ui';
 import { API, showError, showSuccess, renderQuota } from '../../helpers';
-import { getCurrencyConfig } from '../../helpers/render';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import SubscriptionPurchaseModal from './modals/SubscriptionPurchaseModal';
 import {
   formatSubscriptionDuration,
+  formatSubscriptionQuotaLabel,
   formatSubscriptionResetPeriod,
 } from '../../helpers/subscriptionFormat';
 
 const { Text } = Typography;
+
+function formatPlanPrice(price) {
+	const numericPrice = Number(price || 0);
+	if (Number.isInteger(numericPrice)) {
+		return `${numericPrice}元`;
+	}
+	return `${numericPrice.toFixed(2)}元`;
+}
 
 // 过滤易支付方式
 function getEpayMethods(payMethods = []) {
@@ -366,13 +375,27 @@ const SubscriptionPlansCard = ({
                 />
               </div>
             </div>
-            {disableSubscriptionPreference && isSubscriptionPreference && (
+                {disableSubscriptionPreference && isSubscriptionPreference && (
               <Text type='tertiary' size='small'>
                 {t('已保存偏好为')}
                 {subscriptionPreferenceLabel}
                 {t('，当前无生效订阅，将自动使用钱包')}
               </Text>
             )}
+            <div className='mt-2'>
+              <Banner
+                type='info'
+                closeIcon={null}
+                className='!rounded-lg'
+                description={
+                  <div className='text-xs leading-6'>
+                    <div>{t('规则说明：多个生效订阅可并存。')}</div>
+                    <div>{t('单次请求不会叠加多个订阅额度，只会从一个可用订阅扣费。')}</div>
+                    <div>{t('默认按更早到期的订阅优先尝试扣费；若当前订阅额度不足，会继续尝试下一个。')}</div>
+                  </div>
+                }
+              />
+            </div>
 
             {hasAnySubscription ? (
               <>
@@ -443,7 +466,7 @@ const SubscriptionPlansCard = ({
                           ).toLocaleString()}
                         </div>
                         <div className='text-xs text-gray-500 mb-2'>
-                          {t('总额度')}:{' '}
+                          {formatSubscriptionQuotaLabel(subscription, t, true)}:{' '}
                           {totalAmount > 0 ? (
                             <Tooltip
                               content={`${t('原生额度')}：${usedAmount}/${totalAmount} · ${t('剩余')} ${remainAmount}`}
@@ -482,19 +505,15 @@ const SubscriptionPlansCard = ({
               {plans.map((p, index) => {
                 const plan = p?.plan;
                 const totalAmount = Number(plan?.total_amount || 0);
-                const { symbol, rate } = getCurrencyConfig();
                 const price = Number(plan?.price_amount || 0);
-                const convertedPrice = price * rate;
-                const displayPrice = convertedPrice.toFixed(
-                  Number.isInteger(convertedPrice) ? 0 : 2,
-                );
+                const displayPrice = formatPlanPrice(price);
                 const isPopular = index === 0 && plans.length > 1;
                 const limit = Number(plan?.max_purchase_per_user || 0);
                 const limitLabel = limit > 0 ? `${t('限购')} ${limit}` : null;
-                const totalLabel =
-                  totalAmount > 0
-                    ? `${t('总额度')}: ${renderQuota(totalAmount)}`
-                    : `${t('总额度')}: ${t('不限')}`;
+                  const totalLabel =
+                    totalAmount > 0
+                      ? `${formatSubscriptionQuotaLabel(plan, t)}: ${renderQuota(totalAmount)}`
+                      : `${formatSubscriptionQuotaLabel(plan, t)}: ${t('不限')}`;
                 const upgradeLabel = plan?.upgrade_group
                   ? `${t('升级分组')}: ${plan.upgrade_group}`
                   : null;
@@ -559,9 +578,6 @@ const SubscriptionPlansCard = ({
                       {/* 价格区域 */}
                       <div className='py-2'>
                         <div className='flex items-baseline justify-start'>
-                          <span className='text-xl font-bold text-purple-600'>
-                            {symbol}
-                          </span>
                           <span className='text-3xl font-bold text-purple-600'>
                             {displayPrice}
                           </span>

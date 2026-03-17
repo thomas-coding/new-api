@@ -133,6 +133,8 @@ const LoginForm = () => {
   }, [statusState?.status]);
   const hasCustomOAuthProviders =
     (status.custom_oauth_providers || []).length > 0;
+  const registerEnabled = status.register_enabled !== false;
+  const passwordRegisterEnabled = status.password_register_enabled !== false;
   const hasOAuthLoginOptions = Boolean(
     status.github_oauth ||
       status.discord_oauth ||
@@ -142,6 +144,8 @@ const LoginForm = () => {
       status.telegram_oauth ||
       hasCustomOAuthProviders,
   );
+  const allowRegisterPage =
+    registerEnabled && (passwordRegisterEnabled || hasOAuthLoginOptions);
 
   useEffect(() => {
     if (status?.turnstile_check) {
@@ -170,7 +174,7 @@ const LoginForm = () => {
     if (searchParams.get('expired')) {
       showError(t('未登录或登录已过期，请重新登录'));
     }
-  }, []);
+  }, [searchParams, t]);
 
   const onWeChatLoginClicked = () => {
     if ((hasUserAgreement || hasPrivacyPolicy) && !agreedToTerms) {
@@ -696,7 +700,7 @@ const LoginForm = () => {
                 </div>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {allowRegisterPage && !status.self_use_mode_enabled && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}
@@ -849,7 +853,7 @@ const LoginForm = () => {
                 </>
               )}
 
-              {!status.self_use_mode_enabled && (
+              {allowRegisterPage && !status.self_use_mode_enabled && (
                 <div className='mt-6 text-center text-sm'>
                   <Text>
                     {t('没有账户？')}{' '}
@@ -920,6 +924,7 @@ const LoginForm = () => {
                 className='w-4 h-4 text-green-600 dark:text-green-400'
                 fill='currentColor'
                 viewBox='0 0 20 20'
+                aria-hidden='true'
               >
                 <path
                   fillRule='evenodd'

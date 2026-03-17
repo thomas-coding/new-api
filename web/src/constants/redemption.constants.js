@@ -45,3 +45,19 @@ export const REDEMPTION_ACTIONS = {
   ENABLE: 'enable',
   DISABLE: 'disable',
 };
+
+export const REDEMPTION_TYPES = {
+  QUOTA: 'quota',
+  SUBSCRIPTION: 'subscription',
+};
+
+export const REDEMPTION_TYPE_MAP = {
+  [REDEMPTION_TYPES.QUOTA]: {
+    text: '额度',
+    color: 'grey',
+  },
+  [REDEMPTION_TYPES.SUBSCRIPTION]: {
+    text: '订阅套餐',
+    color: 'blue',
+  },
+};

@@ -56,14 +56,6 @@ const durationUnitOptions = [
   { value: 'custom', label: '自定义(秒)' },
 ];
 
-const resetPeriodOptions = [
-  { value: 'never', label: '不重置' },
-  { value: 'daily', label: '每天' },
-  { value: 'weekly', label: '每周' },
-  { value: 'monthly', label: '每月' },
-  { value: 'custom', label: '自定义(秒)' },
-];
-
 const AddEditSubscriptionModal = ({
   visible,
   handleClose,
@@ -88,8 +80,8 @@ const AddEditSubscriptionModal = ({
     duration_unit: 'month',
     duration_value: 1,
     custom_seconds: 0,
-    quota_reset_period: 'never',
-    quota_reset_custom_seconds: 0,
+      quota_reset_period: 'daily',
+      quota_reset_custom_seconds: 0,
     enabled: true,
     sort_order: 0,
     max_purchase_per_user: 0,
@@ -112,8 +104,8 @@ const AddEditSubscriptionModal = ({
       duration_unit: p.duration_unit || 'month',
       duration_value: Number(p.duration_value || 1),
       custom_seconds: Number(p.custom_seconds || 0),
-      quota_reset_period: p.quota_reset_period || 'never',
-      quota_reset_custom_seconds: Number(p.quota_reset_custom_seconds || 0),
+      quota_reset_period: 'daily',
+      quota_reset_custom_seconds: 0,
       enabled: p.enabled !== false,
       sort_order: Number(p.sort_order || 0),
       max_purchase_per_user: Number(p.max_purchase_per_user || 0),
@@ -155,11 +147,8 @@ const AddEditSubscriptionModal = ({
           currency: 'USD',
           duration_value: Number(values.duration_value || 0),
           custom_seconds: Number(values.custom_seconds || 0),
-          quota_reset_period: values.quota_reset_period || 'never',
-          quota_reset_custom_seconds:
-            values.quota_reset_period === 'custom'
-              ? Number(values.quota_reset_custom_seconds || 0)
-              : 0,
+          quota_reset_period: 'daily',
+          quota_reset_custom_seconds: 0,
           sort_order: Number(values.sort_order || 0),
           max_purchase_per_user: Number(values.max_purchase_per_user || 0),
           total_amount: displayAmountToQuota(values.total_amount),
@@ -247,7 +236,9 @@ const AddEditSubscriptionModal = ({
           <Form
             key={formKey}
             initValues={buildFormValues()}
-            getFormApi={(api) => (formApiRef.current = api)}
+            getFormApi={(api) => {
+              formApiRef.current = api;
+            }}
             onSubmit={submit}
           >
             {({ values }) => (
@@ -310,11 +301,11 @@ const AddEditSubscriptionModal = ({
                     <Col span={12}>
                       <Form.InputNumber
                         field='total_amount'
-                        label={t('总额度')}
+                        label={t('每日额度')}
                         required
                         min={0}
                         precision={2}
-                        rules={[{ required: true, message: t('请输入总额度') }]}
+                        rules={[{ required: true, message: t('请输入每日额度') }]}
                         extraText={`${t('0 表示不限')} · ${t('原生额度')}：${displayAmountToQuota(
                           values.total_amount,
                         )}`}
@@ -465,39 +456,22 @@ const AddEditSubscriptionModal = ({
 
                   <Row gutter={12}>
                     <Col span={12}>
-                      <Form.Select
-                        field='quota_reset_period'
-                        label={t('重置周期')}
-                      >
-                        {resetPeriodOptions.map((o) => (
-                          <Select.Option key={o.value} value={o.value}>
-                            {o.label}
-                          </Select.Option>
-                        ))}
-                      </Form.Select>
-                    </Col>
-                    <Col span={12}>
-                      {values.quota_reset_period === 'custom' ? (
-                        <Form.InputNumber
-                          field='quota_reset_custom_seconds'
-                          label={t('自定义秒数')}
-                          required
-                          min={60}
-                          precision={0}
-                          rules={[{ required: true, message: t('请输入秒数') }]}
-                          style={{ width: '100%' }}
+                        <Form.Input
+                          field='quota_reset_period'
+                          label={t('重置周期')}
+                          initValue={t('每天')}
+                          disabled
+                          extraText={t('订阅套餐额度固定按天重置')}
                         />
-                      ) : (
-                        <Form.InputNumber
+                      </Col>
+                      <Col span={12}>
+                        <Form.Input
                           field='quota_reset_custom_seconds'
-                          label={t('自定义秒数')}
-                          min={0}
-                          precision={0}
-                          style={{ width: '100%' }}
+                          label={t('说明')}
+                          initValue={t('无需额外配置')}
                           disabled
                         />
-                      )}
-                    </Col>
+                      </Col>
                   </Row>
                 </Card>
 
