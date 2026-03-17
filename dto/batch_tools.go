@@ -49,8 +49,7 @@ type BatchQuotaPreviewRequest struct {
 
 type BatchQuotaExecuteRequest struct {
 	BatchQuotaPreviewRequest
-	PreviewToken     string `json:"preview_token"`
-	ConfirmationText string `json:"confirmation_text"`
+	PreviewToken string `json:"preview_token"`
 }
 
 type BatchPreviewResponse struct {

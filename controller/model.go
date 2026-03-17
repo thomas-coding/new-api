@@ -167,19 +167,8 @@ func ListModels(c *gin.Context, modelType int) {
 		if tokenGroup != "" {
 			group = tokenGroup
 		}
-		var models []string
-		if tokenGroup == "auto" {
-			for _, autoGroup := range service.GetUserAutoGroup(userGroup) {
-				groupModels := model.GetGroupEnabledModels(autoGroup)
-				for _, g := range groupModels {
-					if !common.StringsContains(models, g) {
-						models = append(models, g)
-					}
-				}
-			}
-		} else {
-			models = model.GetGroupEnabledModels(group)
-		}
+		primaryGroup := pickPrimaryUserFacingGroup(service.GetUserUsableGroups(userGroup), group)
+		models := model.GetGroupEnabledModels(primaryGroup)
 		for _, modelName := range models {
 			if !acceptUnsetRatioModel {
 				_, _, exist := ratio_setting.GetModelRatioOrPrice(modelName)
@@ -201,9 +190,19 @@ func ListModels(c *gin.Context, modelType int) {
 			}
 		}
 	}
+	userOpenAiModels = filterUserFacingOpenAIModels(userOpenAiModels)
 
 	switch modelType {
 	case constant.ChannelTypeAnthropic:
+		if len(userOpenAiModels) == 0 {
+			c.JSON(200, gin.H{
+				"data":     []dto.AnthropicModel{},
+				"first_id": "",
+				"has_more": false,
+				"last_id":  "",
+			})
+			return
+		}
 		useranthropicModels := make([]dto.AnthropicModel, len(userOpenAiModels))
 		for i, model := range userOpenAiModels {
 			useranthropicModels[i] = dto.AnthropicModel{

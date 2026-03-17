@@ -291,6 +291,52 @@ func (token *Token) Insert() error {
 	return err
 }
 
+func CreateDefaultTokenForUser(userID int) (*Token, error) {
+	return createDefaultTokenForUserWithDB(DB, userID)
+}
+
+func CreateDefaultTokenForUserTx(tx *gorm.DB, userID int) (*Token, error) {
+	if tx == nil {
+		tx = DB
+	}
+	return createDefaultTokenForUserWithDB(tx, userID)
+}
+
+func createDefaultTokenForUserWithDB(tx *gorm.DB, userID int) (*Token, error) {
+	if userID <= 0 {
+		return nil, errors.New("user id is required")
+	}
+	existing := &Token{}
+	err := tx.Where("user_id = ? AND name = ?", userID, "default").First(existing).Error
+	if err == nil {
+		return existing, nil
+	}
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	key, err := common.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	now := common.GetTimestamp()
+	token := &Token{
+		UserId:             userID,
+		Name:               "default",
+		Key:                key,
+		CreatedTime:        now,
+		AccessedTime:       now,
+		ExpiredTime:        -1,
+		RemainQuota:        500000,
+		UnlimitedQuota:     true,
+		ModelLimitsEnabled: false,
+		Group:              "default",
+	}
+	if err := tx.Create(token).Error; err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
 // Update Make sure your token's fields is completed, because this will update non-zero values
 func (token *Token) Update() (err error) {
 	defer func() {

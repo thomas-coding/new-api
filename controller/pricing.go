@@ -37,15 +37,19 @@ func GetPricing(c *gin.Context) {
 			delete(groupRatio, group)
 		}
 	}
+	filteredUsableGroup := filterUserFacingUsableGroups(usableGroup, group)
+	filteredGroupRatio := filterUserFacingGroupRatio(groupRatio, usableGroup, group)
+	filteredPricing := filterUserFacingPricing(pricing, usableGroup, group)
+	filteredVendors := filterUserFacingVendors(filteredPricing, model.GetVendors())
 
 	c.JSON(200, gin.H{
 		"success":            true,
-		"data":               pricing,
-		"vendors":            model.GetVendors(),
-		"group_ratio":        groupRatio,
-		"usable_group":       usableGroup,
+		"data":               filteredPricing,
+		"vendors":            filteredVendors,
+		"group_ratio":        filteredGroupRatio,
+		"usable_group":       filteredUsableGroup,
 		"supported_endpoint": model.GetSupportedEndpointMap(),
-		"auto_groups":        service.GetUserAutoGroup(group),
+		"auto_groups":        []string{},
 		"_":                  "a42d372ccf0b5dd13ecf71203521f9d2",
 	})
 }

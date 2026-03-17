@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"gorm.io/gorm"
 )
 
 const (
@@ -71,13 +72,12 @@ type batchRedemptionsPreviewSummary struct {
 }
 
 type batchQuotaPreviewSummary struct {
-	MatchedCount     int      `json:"matched_count"`
-	TotalQuota       int      `json:"total_quota"`
-	ScopeType        string   `json:"scope_type"`
-	Group            string   `json:"group,omitempty"`
-	IncludeAdmins    bool     `json:"include_admins"`
-	SampleUsernames  []string `json:"sample_usernames,omitempty"`
-	ConfirmationText string   `json:"confirmation_text"`
+	MatchedCount    int      `json:"matched_count"`
+	TotalQuota      int      `json:"total_quota"`
+	ScopeType       string   `json:"scope_type"`
+	Group           string   `json:"group,omitempty"`
+	IncludeAdmins   bool     `json:"include_admins"`
+	SampleUsernames []string `json:"sample_usernames,omitempty"`
 }
 
 type batchUsersExecuteSummary struct {
@@ -173,7 +173,7 @@ func ExecuteBatchUsers(ctx BatchOperationContext, req dto.BatchUsersExecuteReque
 		if err != nil {
 			return nil, err
 		}
-		user, err := createBatchUser(username, password, validated)
+		user, token, err := createBatchUser(username, password, validated)
 		if err != nil {
 			failedCount++
 			failedItems = append(failedItems, dto.BatchFailureItem{TargetKey: username, ReasonCode: "create_failed", ReasonMessage: err.Error()})
@@ -181,7 +181,7 @@ func ExecuteBatchUsers(ctx BatchOperationContext, req dto.BatchUsersExecuteReque
 			continue
 		}
 		successCount++
-		line := formatUserExportLine(validated.ExportFormat, validated.ExportDelimiter, user.Username, password, user.Group, user.Quota, user.Status)
+		line := formatUserExportLine(validated.ExportFormat, validated.ExportDelimiter, user.Username, password, token.Key, user.Group, user.Quota, user.Status)
 		createdLines = append(createdLines, line)
 		items = append(items, newBatchItem(job.Id, model.AdminBatchItemTypeUser, user.Username, user.Id, model.AdminBatchItemResultSuccess, "", "", 0, ""))
 		_ = i
@@ -363,7 +363,6 @@ func PreviewBatchQuota(operatorID int, req dto.BatchQuotaPreviewRequest) (*dto.B
 		Summary:          summary,
 		Samples:          summary.SampleUsernames,
 		CanExecute:       summary.MatchedCount > 0,
-		ConfirmationText: summary.ConfirmationText,
 	}, nil
 }
 
@@ -374,9 +373,6 @@ func ExecuteBatchQuota(ctx BatchOperationContext, req dto.BatchQuotaExecuteReque
 	}
 	if err := verifyPreviewToken(model.AdminBatchTypeQuotaGrant, ctx.OperatorID, req.PreviewToken, validated); err != nil {
 		return nil, err
-	}
-	if strings.TrimSpace(req.ConfirmationText) != previewSummary.ConfirmationText {
-		return nil, errors.New("confirmation text mismatch")
 	}
 	batchID := generateBatchID("QTA")
 	requestPayloadMasked, _ := marshalToJSONString(validated)
@@ -640,19 +636,17 @@ func buildBatchQuotaPreview(req dto.BatchQuotaPreviewRequest) (dto.BatchQuotaPre
 		}
 		samples = append(samples, user.Username)
 	}
-	confirmationText := fmt.Sprintf("ADD %d USERS", len(users))
 	warnings := []string{"该操作会立即生效，不支持一键回滚"}
 	if !validated.IncludeAdmins {
 		warnings = append(warnings, "默认已排除管理员账号")
 	}
 	return validated, users, batchQuotaPreviewSummary{
-		MatchedCount:     len(users),
-		TotalQuota:       len(users) * validated.QuotaDelta,
-		ScopeType:        validated.ScopeType,
-		Group:            validated.Group,
-		IncludeAdmins:    validated.IncludeAdmins,
-		SampleUsernames:  samples,
-		ConfirmationText: confirmationText,
+		MatchedCount:    len(users),
+		TotalQuota:      len(users) * validated.QuotaDelta,
+		ScopeType:       validated.ScopeType,
+		Group:           validated.Group,
+		IncludeAdmins:   validated.IncludeAdmins,
+		SampleUsernames: samples,
 	}, warnings, nil
 }
 
@@ -682,10 +676,10 @@ func validateGroup(group string) error {
 	return nil
 }
 
-func createBatchUser(username string, password string, req dto.BatchUsersPreviewRequest) (*model.User, error) {
+func createBatchUser(username string, password string, req dto.BatchUsersPreviewRequest) (*model.User, *model.Token, error) {
 	hashedPassword, err := common.Password2Hash(password)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	setting := dto.UserSetting{SidebarModules: model.GenerateDefaultSidebarConfigForRole(common.RoleCommonUser)}
 	user := &model.User{
@@ -700,10 +694,22 @@ func createBatchUser(username string, password string, req dto.BatchUsersPreview
 		Remark:      "",
 	}
 	user.SetSetting(setting)
-	if err := model.DB.Create(user).Error; err != nil {
-		return nil, err
+	var userToken *model.Token
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(user).Error; err != nil {
+			return err
+		}
+		token, err := model.CreateDefaultTokenForUserTx(tx, user.Id)
+		if err != nil {
+			return err
+		}
+		userToken = token
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
-	return user, nil
+	return user, userToken, nil
 }
 
 func buildBatchUserPassword(req dto.BatchUsersPreviewRequest) (string, error) {
@@ -785,14 +791,14 @@ func maskBatchUsersRequest(req dto.BatchUsersPreviewRequest) map[string]interfac
 	}
 }
 
-func formatUserExportLine(format string, delimiter string, username string, password string, group string, quota int, status int) string {
+func formatUserExportLine(format string, delimiter string, username string, password string, token string, group string, quota int, status int) string {
 	if format == batchExportFormatCSV {
-		return fmt.Sprintf("%s,%s,%s,%d,%d", username, password, group, quota, status)
+		return fmt.Sprintf("%s,%s,%s,%s,%d,%d", username, password, token, group, quota, status)
 	}
 	if delimiter == batchDelimiterDash {
-		return fmt.Sprintf("%s----%s", username, password)
+		return fmt.Sprintf("%s----%s----%s", username, password, token)
 	}
-	return fmt.Sprintf("%s,%s", username, password)
+	return fmt.Sprintf("%s,%s,%s", username, password, token)
 }
 
 func formatRedemptionExportLine(format string, code string, planTitle string, expiredTime int64, batchID string) string {

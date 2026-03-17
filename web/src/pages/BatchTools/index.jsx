@@ -66,11 +66,10 @@ const defaultQuotaForm = {
   include_admins: false,
   quota_delta_display: 10,
   reason: '',
-  confirmation_text: '',
 };
 
 const csvHeaders = {
-  users: 'username,password,group,initial_quota,status\n',
+  users: 'username,password,token,group,initial_quota,status\n',
   redemptions: 'code,plan_title,expires_at,batch_id\n',
   quota: 'username,result,reason\n',
 };
@@ -375,10 +374,6 @@ function BatchTools() {
       showError(t('请先预览再执行'));
       return;
     }
-    if (quotaForm.confirmation_text !== quotaPreview.confirmation_text) {
-      showError(t('请先输入正确的确认词'));
-      return;
-    }
     runExecute(
       t('确认批量增额'),
       t('该操作会立即生效，且不提供一键回滚。'),
@@ -387,7 +382,6 @@ function BatchTools() {
         const res = await API.post('/api/admin/batch/quota/execute', {
           ...quotaPayload(),
           preview_token: quotaPreview.preview_token,
-          confirmation_text: quotaForm.confirmation_text,
         });
         if (res.data.success) {
           setQuotaResult(res.data.data);
@@ -540,7 +534,7 @@ function BatchTools() {
       <div className='mt-3'>
         <Banner
           type='warning'
-          description={t('所有批量操作都必须先预览，再执行；批量增额还需要输入动态确认词。')}
+          description={t('所有批量操作都必须先预览，再执行；敏感导出内容只会在执行成功后的当前结果中返回一次。')}
         />
       </div>
     </div>
@@ -599,6 +593,9 @@ function BatchTools() {
                     <div className='md:col-span-2'>
                       <Text>{t('到期时间')}</Text>
                       <DatePicker className='mt-1 w-full' type='dateTime' value={redemptionsForm.expired_time} onChange={(value) => updateRedemptionsForm({ expired_time: value || null })} />
+                      <Text type='tertiary' size='small' className='mt-1 block'>
+                        {t('留空表示长期有效')}
+                      </Text>
                     </div>
                   </div>
                   <Divider />
@@ -670,7 +667,7 @@ function BatchTools() {
                     </div>
                     <div>
                       <Text>{t('TXT 分隔')}</Text>
-                      <Select className='mt-1' optionList={[{ label: 'username,password', value: 'comma' }, { label: 'username----password', value: 'dash' }]} value={usersForm.export_delimiter} onChange={(value) => updateUsersForm({ export_delimiter: value })} disabled={usersForm.export_format === 'csv'} />
+                      <Select className='mt-1' optionList={[{ label: 'username,password,token', value: 'comma' }, { label: 'username----password----token', value: 'dash' }]} value={usersForm.export_delimiter} onChange={(value) => updateUsersForm({ export_delimiter: value })} disabled={usersForm.export_format === 'csv'} />
                     </div>
                     <div>
                       <Text>{t('文件名')}</Text>
@@ -721,12 +718,6 @@ function BatchTools() {
                       <Text>{t('变更原因')}</Text>
                       <Input className='mt-1' value={quotaForm.reason} onChange={(value) => updateQuotaForm({ reason: value })} />
                     </div>
-                    {quotaPreview?.confirmation_text && (
-                      <div className='md:col-span-2'>
-                        <Text>{t('确认词')}</Text>
-                        <Input className='mt-1' placeholder={quotaPreview.confirmation_text} value={quotaForm.confirmation_text} onChange={(value) => updateQuotaForm({ confirmation_text: value })} />
-                      </div>
-                    )}
                   </div>
                   <Divider />
                   <Space>

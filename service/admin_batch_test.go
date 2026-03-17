@@ -41,11 +41,14 @@ func TestBatchUsersPreviewAndExecute(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, model.AdminBatchStatusCompleted, resp.Status)
-	require.Contains(t, resp.Export.Content, "demo0001,Passw0rd!")
+	require.Contains(t, resp.Export.Content, "demo0001,Passw0rd!,")
 
 	var userCount int64
 	require.NoError(t, model.DB.Model(&model.User{}).Where("username IN ?", []string{"demo0001", "demo0002"}).Count(&userCount).Error)
 	require.Equal(t, int64(2), userCount)
+	var tokenCount int64
+	require.NoError(t, model.DB.Model(&model.Token{}).Where("user_id IN (SELECT id FROM users WHERE username IN ?)", []string{"demo0001", "demo0002"}).Count(&tokenCount).Error)
+	require.Equal(t, int64(2), tokenCount)
 
 	job, err := model.GetAdminBatchJobByBatchID(resp.BatchID)
 	require.NoError(t, err)
@@ -102,7 +105,6 @@ func TestBatchQuotaPreviewExcludesAdmins(t *testing.T) {
 	summary, ok := preview.Summary.(batchQuotaPreviewSummary)
 	require.True(t, ok)
 	require.Equal(t, 2, summary.MatchedCount)
-	require.Equal(t, "ADD 2 USERS", preview.ConfirmationText)
 	resp, err := ExecuteBatchQuota(BatchOperationContext{OperatorID: 1, OperatorUsername: "root"}, dto.BatchQuotaExecuteRequest{
 		BatchQuotaPreviewRequest: dto.BatchQuotaPreviewRequest{
 			ScopeType:     "all",
@@ -110,8 +112,7 @@ func TestBatchQuotaPreviewExcludesAdmins(t *testing.T) {
 			QuotaDelta:    50,
 			Reason:        "campaign",
 		},
-		PreviewToken:     preview.PreviewToken,
-		ConfirmationText: preview.ConfirmationText,
+		PreviewToken: preview.PreviewToken,
 	})
 	require.NoError(t, err)
 	require.Equal(t, model.AdminBatchStatusCompleted, resp.Status)
