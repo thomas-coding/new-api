@@ -255,10 +255,10 @@ func migrateDB() error {
 		return err
 	}
 
-	err := DB.AutoMigrate(
-		&Channel{},
-		&Token{},
-		&User{},
+		err := DB.AutoMigrate(
+			&Channel{},
+			&Token{},
+			&User{},
 		&PasskeyCredential{},
 		&Option{},
 		&Redemption{},
@@ -277,10 +277,12 @@ func migrateDB() error {
 		&Checkin{},
 		&SubscriptionOrder{},
 		&UserSubscription{},
-		&SubscriptionPreConsumeRecord{},
-		&CustomOAuthProvider{},
-		&UserOAuthBinding{},
-	)
+			&SubscriptionPreConsumeRecord{},
+			&CustomOAuthProvider{},
+			&UserOAuthBinding{},
+			&AdminBatchJob{},
+			&AdminBatchJobItem{},
+		)
 	if err != nil {
 		return err
 	}
@@ -328,6 +330,8 @@ func migrateDBFast() error {
 		{&SubscriptionPreConsumeRecord{}, "SubscriptionPreConsumeRecord"},
 		{&CustomOAuthProvider{}, "CustomOAuthProvider"},
 		{&UserOAuthBinding{}, "UserOAuthBinding"},
+		{&AdminBatchJob{}, "AdminBatchJob"},
+		{&AdminBatchJobItem{}, "AdminBatchJobItem"},
 	}
 	// 动态计算migration数量，确保errChan缓冲区足够大
 	errChan := make(chan error, len(migrations))

@@ -35,6 +35,7 @@ const routerMap = {
   channel: '/console/channel',
   token: '/console/token',
   redemption: '/console/redemption',
+  batch: '/console/batch-tools',
   topup: '/console/topup',
   user: '/console/user',
   subscription: '/console/subscription',
@@ -182,6 +183,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'user',
         to: '/user',
         className: isAdmin() ? '' : 'tableHiddle',
+      },
+      {
+        text: t('批量工具'),
+        itemKey: 'batch',
+        to: '/batch-tools',
+        className: isRoot() ? '' : 'tableHiddle',
       },
       {
         text: t('系统设置'),

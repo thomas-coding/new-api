@@ -66,6 +66,7 @@ export default function SettingsSidebarModulesAdmin(props) {
       redemption: true,
       user: true,
       subscription: true,
+      batch: true,
       setting: true,
     },
   });
@@ -127,6 +128,7 @@ export default function SettingsSidebarModulesAdmin(props) {
         redemption: true,
         user: true,
         subscription: true,
+        batch: true,
         setting: true,
       },
     };
@@ -196,6 +198,7 @@ export default function SettingsSidebarModulesAdmin(props) {
             redemption: true,
             user: true,
             subscription: true,
+            batch: true,
             setting: true,
           },
         };
@@ -264,6 +267,11 @@ export default function SettingsSidebarModulesAdmin(props) {
           key: 'subscription',
           title: t('订阅管理'),
           description: t('订阅套餐管理'),
+        },
+        {
+          key: 'batch',
+          title: t('批量工具'),
+          description: t('批量创建用户、兑换码和增额'),
         },
         {
           key: 'redemption',
