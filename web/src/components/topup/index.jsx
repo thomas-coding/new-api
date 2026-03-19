@@ -118,17 +118,32 @@ const TopUp = () => {
       const { success, message, data } = res.data;
       if (success) {
         showSuccess(t('兑换成功！'));
-        Modal.success({
-          title: t('兑换成功！'),
-          content: t('成功兑换额度：') + renderQuota(data),
-          centered: true,
-        });
-        if (userState.user) {
-          const updatedUser = {
-            ...userState.user,
-            quota: userState.user.quota + data,
-          };
-          userDispatch({ type: 'login', payload: updatedUser });
+        if (data?.redeem_type === 'subscription') {
+          Modal.success({
+            title: t('兑换成功！'),
+            content:
+              t('成功兑换订阅：') +
+              (data.subscription_plan_title || t('订阅套餐')) +
+              '，' +
+              t('有效期至：') +
+              new Date((data.subscription_end_time || 0) * 1000).toLocaleString(),
+            centered: true,
+          });
+          await getSubscriptionSelf();
+        } else {
+          const quota = typeof data === 'number' ? data : Number(data?.quota || 0);
+          Modal.success({
+            title: t('兑换成功！'),
+            content: t('成功兑换额度：') + renderQuota(quota),
+            centered: true,
+          });
+          if (userState.user) {
+            const updatedUser = {
+              ...userState.user,
+              quota: userState.user.quota + quota,
+            };
+            userDispatch({ type: 'login', payload: updatedUser });
+          }
         }
         setRedemptionCode('');
       } else {

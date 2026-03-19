@@ -32,3 +32,10 @@ export function formatSubscriptionResetPeriod(plan, t) {
   }
   return t('不重置');
 }
+
+export function formatSubscriptionQuotaLabel(plan, t, current = false) {
+  if (current) {
+    return t('今日额度');
+  }
+  return t('每日额度');
+}

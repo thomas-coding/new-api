@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
@@ -11,6 +12,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func validateRedemptionPayload(c *gin.Context, redemption *model.Redemption) bool {
+	redemption.RedeemType = model.NormalizeRedemptionType(redemption.RedeemType)
+	redemption.Name = strings.TrimSpace(redemption.Name)
+	if redemption.RedeemType == model.RedemptionTypeSubscription {
+		if redemption.SubscriptionPlanId <= 0 {
+			common.ApiErrorMsg(c, "请选择订阅套餐")
+			return false
+		}
+		if _, err := model.GetSubscriptionPlanById(redemption.SubscriptionPlanId); err != nil {
+			common.ApiErrorMsg(c, "订阅套餐不存在")
+			return false
+		}
+		redemption.Quota = 0
+		return true
+	}
+	redemption.SubscriptionPlanId = 0
+	if redemption.Quota <= 0 {
+		common.ApiErrorMsg(c, "额度必须大于0")
+		return false
+	}
+	return true
+}
 
 func GetAllRedemptions(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
@@ -81,16 +105,21 @@ func AddRedemption(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 		return
 	}
+	if !validateRedemptionPayload(c, &redemption) {
+		return
+	}
 	var keys []string
 	for i := 0; i < redemption.Count; i++ {
 		key := common.GetUUID()
 		cleanRedemption := model.Redemption{
-			UserId:      c.GetInt("id"),
-			Name:        redemption.Name,
-			Key:         key,
-			CreatedTime: common.GetTimestamp(),
-			Quota:       redemption.Quota,
-			ExpiredTime: redemption.ExpiredTime,
+			UserId:             c.GetInt("id"),
+			Name:               redemption.Name,
+			Key:                key,
+			CreatedTime:        common.GetTimestamp(),
+			RedeemType:         redemption.RedeemType,
+			Quota:              redemption.Quota,
+			SubscriptionPlanId: redemption.SubscriptionPlanId,
+			ExpiredTime:        redemption.ExpiredTime,
 		}
 		err = cleanRedemption.Insert()
 		if err != nil {
@@ -144,10 +173,26 @@ func UpdateRedemption(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": msg})
 			return
 		}
+		if !validateRedemptionPayload(c, &redemption) {
+			return
+		}
 		// If you add more fields, please also update redemption.Update()
 		cleanRedemption.Name = redemption.Name
+		cleanRedemption.RedeemType = redemption.RedeemType
 		cleanRedemption.Quota = redemption.Quota
+		cleanRedemption.SubscriptionPlanId = redemption.SubscriptionPlanId
 		cleanRedemption.ExpiredTime = redemption.ExpiredTime
+	} else {
+		existingRedemption, err := model.GetRedemptionById(cleanRedemption.Id)
+		if err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+		cleanRedemption.Name = existingRedemption.Name
+		cleanRedemption.RedeemType = existingRedemption.RedeemType
+		cleanRedemption.Quota = existingRedemption.Quota
+		cleanRedemption.SubscriptionPlanId = existingRedemption.SubscriptionPlanId
+		cleanRedemption.ExpiredTime = existingRedemption.ExpiredTime
 	}
 	if statusOnly != "" {
 		cleanRedemption.Status = redemption.Status

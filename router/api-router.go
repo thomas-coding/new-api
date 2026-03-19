@@ -199,6 +199,18 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		adminBatchRoute := apiRouter.Group("/admin/batch")
+		adminBatchRoute.Use(middleware.RootAuth())
+		{
+			adminBatchRoute.POST("/users/preview", controller.PreviewBatchUsers)
+			adminBatchRoute.POST("/users/execute", controller.ExecuteBatchUsers)
+			adminBatchRoute.POST("/redemptions/preview", controller.PreviewBatchRedemptions)
+			adminBatchRoute.POST("/redemptions/execute", controller.ExecuteBatchRedemptions)
+			adminBatchRoute.POST("/quota/preview", controller.PreviewBatchQuota)
+			adminBatchRoute.POST("/quota/execute", controller.ExecuteBatchQuota)
+			adminBatchRoute.GET("/jobs", controller.ListAdminBatchJobs)
+			adminBatchRoute.GET("/jobs/:batch_id", controller.GetAdminBatchJob)
+		}
 		channelRoute := apiRouter.Group("/channel")
 		channelRoute.Use(middleware.AdminAuth())
 		{

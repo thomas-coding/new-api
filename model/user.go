@@ -158,6 +158,10 @@ func generateDefaultSidebarConfigForRole(userRole int) string {
 	return string(configBytes)
 }
 
+func GenerateDefaultSidebarConfigForRole(userRole int) string {
+	return generateDefaultSidebarConfigForRole(userRole)
+}
+
 // CheckUserExistOrDeleted check if user exist or deleted, if not exist, return false, nil, if deleted or exist, return true, nil
 func CheckUserExistOrDeleted(username string, email string) (bool, error) {
 	var user User
