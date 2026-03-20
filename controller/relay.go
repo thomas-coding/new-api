@@ -64,6 +64,16 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 	return err
 }
 
+func shouldLogRelayPerf(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := c.Request.URL.Path
+	return strings.HasPrefix(path, "/v1/chat/completions") ||
+		strings.HasPrefix(path, "/v1/completions") ||
+		strings.HasPrefix(path, "/v1/responses")
+}
+
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
@@ -73,6 +83,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
+	)
+	requestStart := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+	if requestStart.IsZero() {
+		requestStart = time.Now()
+	}
+	var (
+		requestModel       string
+		parseDoneAt        time.Time
+		relayInfoDoneAt    time.Time
+		preflightDoneAt    time.Time
+		channelDuration    time.Duration
+		downstreamDuration time.Duration
+		attemptCount       int
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -104,8 +127,50 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			}
 		}
 	}()
+	defer func() {
+		if !shouldLogRelayPerf(c) {
+			return
+		}
+		status := c.Writer.Status()
+		if newAPIError != nil && newAPIError.StatusCode > 0 {
+			status = newAPIError.StatusCode
+		}
+		if status == 0 {
+			status = http.StatusOK
+		}
+		parseMs := int64(0)
+		if !parseDoneAt.IsZero() {
+			parseMs = parseDoneAt.Sub(requestStart).Milliseconds()
+		}
+		relayInfoMs := int64(0)
+		if !parseDoneAt.IsZero() && !relayInfoDoneAt.IsZero() {
+			relayInfoMs = relayInfoDoneAt.Sub(parseDoneAt).Milliseconds()
+		}
+		preflightMs := int64(0)
+		if !relayInfoDoneAt.IsZero() && !preflightDoneAt.IsZero() {
+			preflightMs = preflightDoneAt.Sub(relayInfoDoneAt).Milliseconds()
+		}
+		modelName := requestModel
+		if modelName == "" {
+			modelName = c.GetString("original_model")
+		}
+		logger.LogInfo(c, fmt.Sprintf(
+			"[perf] newapi relay path=%s model=%s attempts=%d status=%d parse_ms=%d relay_info_ms=%d preflight_ms=%d channel_ms=%d downstream_ms=%d total_ms=%d",
+			c.Request.URL.Path,
+			modelName,
+			attemptCount,
+			status,
+			parseMs,
+			relayInfoMs,
+			preflightMs,
+			channelDuration.Milliseconds(),
+			downstreamDuration.Milliseconds(),
+			time.Since(requestStart).Milliseconds(),
+		))
+	}()
 
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
+	parseDoneAt = time.Now()
 	if err != nil {
 		// Map "request body too large" to 413 so clients can handle it correctly
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
@@ -117,10 +182,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfoDoneAt = time.Now()
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	requestModel = relayInfo.OriginModelName
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -136,6 +203,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		contains, words := service.CheckSensitiveText(meta.CombineText)
 		if contains {
 			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
+			preflightDoneAt = time.Now()
 			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
 			return
 		}
@@ -143,6 +211,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
 	if err != nil {
+		preflightDoneAt = time.Now()
 		newAPIError = types.NewError(err, types.ErrorCodeCountTokenFailed)
 		return
 	}
@@ -151,6 +220,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
+		preflightDoneAt = time.Now()
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError)
 		return
 	}
@@ -162,9 +232,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	} else {
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
 		if newAPIError != nil {
+			preflightDoneAt = time.Now()
 			return
 		}
 	}
+	preflightDoneAt = time.Now()
 
 	defer func() {
 		// Only return quota if downstream failed and quota was actually pre-consumed
@@ -187,14 +259,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		attemptCount++
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		channelStart := time.Now()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
+		channelDuration += time.Since(channelStart)
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
 			break
 		}
 
+		downstreamStart := time.Now()
 		addUsedChannel(c, channel.Id)
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
@@ -204,6 +280,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			} else {
 				newAPIError = types.NewErrorWithStatusCode(bodyErr, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 			}
+			downstreamDuration += time.Since(downstreamStart)
 			break
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
@@ -218,6 +295,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			newAPIError = relayHandler(c, relayInfo)
 		}
+		downstreamDuration += time.Since(downstreamStart)
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
