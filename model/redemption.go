@@ -241,6 +241,11 @@ func Redeem(key string, userId int) (result *RedeemResult, err error) {
 		common.SysError("redemption failed: " + err.Error())
 		return nil, ErrRedeemFailed
 	}
+	if result.RedeemType == RedemptionTypeQuota {
+		if cacheErr := invalidateUserCache(userId); cacheErr != nil {
+			common.SysLog("failed to invalidate user cache after redemption: " + cacheErr.Error())
+		}
+	}
 	if result.RedeemType == RedemptionTypeSubscription {
 		RecordLog(userId, LogTypeTopup, fmt.Sprintf("通过兑换码领取订阅 %s，兑换码ID %d", result.SubscriptionPlanTitle, redemption.Id))
 	} else {
