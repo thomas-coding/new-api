@@ -70,10 +70,15 @@ const defaultQuotaForm = {
   reason: '',
 };
 
+const defaultSubscriptionsExtendForm = {
+  days: 1,
+};
+
 const csvHeaders = {
   users: 'username,password,token,group,initial_quota,status\n',
   redemptions: 'code,redeem_type,target,expires_at,batch_id\n',
   quota: 'username,result,reason\n',
+  subscriptions: 'username,result,reason\n',
 };
 
 function BatchTools() {
@@ -101,6 +106,16 @@ function BatchTools() {
   const [quotaPreview, setQuotaPreview] = useState(null);
   const [quotaResult, setQuotaResult] = useState(null);
   const [quotaLoading, setQuotaLoading] = useState(false);
+
+  const [subscriptionsExtendForm, setSubscriptionsExtendForm] = useState(
+    defaultSubscriptionsExtendForm,
+  );
+  const [subscriptionsExtendPreview, setSubscriptionsExtendPreview] =
+    useState(null);
+  const [subscriptionsExtendResult, setSubscriptionsExtendResult] =
+    useState(null);
+  const [subscriptionsExtendLoading, setSubscriptionsExtendLoading] =
+    useState(false);
 
   const groupOptions = useMemo(
     () => groups.map((item) => ({ label: item, value: item })),
@@ -250,6 +265,11 @@ function BatchTools() {
     setQuotaPreview(null);
     setQuotaResult(null);
   };
+  const updateSubscriptionsExtendForm = (patch) => {
+    setSubscriptionsExtendForm((prev) => ({ ...prev, ...patch }));
+    setSubscriptionsExtendPreview(null);
+    setSubscriptionsExtendResult(null);
+  };
 
   const usersPayload = () => ({
     ...usersForm,
@@ -272,6 +292,9 @@ function BatchTools() {
   const quotaPayload = () => ({
     ...quotaForm,
     quota_delta: displayAmountToQuota(quotaForm.quota_delta_display),
+  });
+  const subscriptionsExtendPayload = () => ({
+    ...subscriptionsExtendForm,
   });
 
   const runPreview = async (url, payload, setLoading, setPreview, message) => {
@@ -403,6 +426,41 @@ function BatchTools() {
         if (res.data.success) {
           setQuotaResult(res.data.data);
           showSuccess(t('批量增额执行完成'));
+          await loadJobs();
+          return;
+        }
+        showError(res.data.message);
+      },
+    );
+  };
+
+  const previewSubscriptionsExtend = async () => {
+    await runPreview(
+      '/api/admin/batch/subscriptions/preview',
+      subscriptionsExtendPayload(),
+      setSubscriptionsExtendLoading,
+      setSubscriptionsExtendPreview,
+      t('批量延期订阅预览已生成'),
+    );
+  };
+
+  const executeSubscriptionsExtend = () => {
+    if (!subscriptionsExtendPreview?.preview_token) {
+      showError(t('请先预览再执行'));
+      return;
+    }
+    runExecute(
+      t('确认批量延期订阅'),
+      t('该操作会立即生效，且不提供一键回滚。'),
+      setSubscriptionsExtendLoading,
+      async () => {
+        const res = await API.post('/api/admin/batch/subscriptions/execute', {
+          ...subscriptionsExtendPayload(),
+          preview_token: subscriptionsExtendPreview.preview_token,
+        });
+        if (res.data.success) {
+          setSubscriptionsExtendResult(res.data.data);
+          showSuccess(t('批量延期订阅执行完成'));
           await loadJobs();
           return;
         }
@@ -781,6 +839,59 @@ function BatchTools() {
                 </Card>
               </div>
               {renderResultPanel(quotaPreview, quotaResult, 'quota')}
+            </div>
+          </Tabs.TabPane>
+
+          <Tabs.TabPane tab={t('批量延期订阅')} itemKey='subscriptions'>
+            <div className='grid grid-cols-1 xl:grid-cols-3 gap-4'>
+              <div className='xl:col-span-2'>
+                <Card>
+                  <Title heading={6}>{t('参数配置')}</Title>
+                  <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+                    <div>
+                      <Text>{t('延期天数')}</Text>
+                      <InputNumber
+                        className='mt-1 w-full'
+                        min={1}
+                        max={365}
+                        value={subscriptionsExtendForm.days}
+                        onChange={(value) =>
+                          updateSubscriptionsExtendForm({
+                            days: Number(value || 0),
+                          })
+                        }
+                      />
+                      <Text type='tertiary' size='small' className='mt-1 block'>
+                        {t('只会延期当前生效中的订阅；同一用户的多条生效订阅会一起延期。')}
+                      </Text>
+                    </div>
+                  </div>
+                  <Divider />
+                  <Space>
+                    <Button
+                      theme='solid'
+                      loading={subscriptionsExtendLoading}
+                      onClick={previewSubscriptionsExtend}
+                    >
+                      {t('预览')}
+                    </Button>
+                    <Button
+                      theme='light'
+                      type='danger'
+                      disabled={!subscriptionsExtendPreview}
+                      loading={subscriptionsExtendLoading}
+                      onClick={executeSubscriptionsExtend}
+                    >
+                      {t('执行')}
+                    </Button>
+                  </Space>
+                </Card>
+              </div>
+              {renderResultPanel(
+                subscriptionsExtendPreview,
+                subscriptionsExtendResult,
+                'subscriptions',
+              )}
             </div>
           </Tabs.TabPane>
         </Tabs>

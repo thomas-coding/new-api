@@ -10,6 +10,7 @@ const (
 	AdminBatchTypeUsersCreate       = "users_create"
 	AdminBatchTypeRedemptionsCreate = "redemptions_create"
 	AdminBatchTypeQuotaGrant        = "quota_grant"
+	AdminBatchTypeSubscriptionsExtend = "subscriptions_extend"
 
 	AdminBatchStatusPreviewed     = "previewed"
 	AdminBatchStatusRunning       = "running"
@@ -20,6 +21,7 @@ const (
 	AdminBatchItemTypeUser       = "user"
 	AdminBatchItemTypeRedemption = "redemption"
 	AdminBatchItemTypeQuota      = "quota_target"
+	AdminBatchItemTypeSubscription = "subscription_target"
 
 	AdminBatchItemResultSuccess = "success"
 	AdminBatchItemResultFailed  = "failed"

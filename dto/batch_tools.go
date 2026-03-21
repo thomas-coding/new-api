@@ -54,6 +54,15 @@ type BatchQuotaExecuteRequest struct {
 	PreviewToken string `json:"preview_token"`
 }
 
+type BatchSubscriptionsExtendPreviewRequest struct {
+	Days int `json:"days"`
+}
+
+type BatchSubscriptionsExtendExecuteRequest struct {
+	BatchSubscriptionsExtendPreviewRequest
+	PreviewToken string `json:"preview_token"`
+}
+
 type BatchPreviewResponse struct {
 	BatchType        string      `json:"batch_type"`
 	Stage            string      `json:"stage"`

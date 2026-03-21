@@ -25,6 +25,7 @@ const (
 	batchUsersMaxCount        = 200
 	batchRedemptionsMaxCount  = 500
 	batchQuotaMaxMatchedUsers = 500
+	batchSubscriptionMaxDays  = 365
 
 	batchPasswordModeRandom = "random"
 	batchPasswordModeFixed  = "fixed"
@@ -83,6 +84,16 @@ type batchQuotaPreviewSummary struct {
 	SampleUsernames []string `json:"sample_usernames,omitempty"`
 }
 
+type batchSubscriptionsExtendPreviewSummary struct {
+	TotalUsers                int      `json:"total_users"`
+	MatchedUserCount          int      `json:"matched_user_count"`
+	MatchedSubscriptionCount  int      `json:"matched_subscription_count"`
+	SkippedUserCount          int      `json:"skipped_user_count"`
+	ExtensionDays             int      `json:"extension_days"`
+	ExtensionSeconds          int64    `json:"extension_seconds"`
+	SampleUsernames           []string `json:"sample_usernames,omitempty"`
+}
+
 type batchUsersExecuteSummary struct {
 	RequestedCount int `json:"requested_count"`
 	SuccessCount   int `json:"success_count"`
@@ -106,6 +117,23 @@ type batchQuotaExecuteSummary struct {
 	FailedCount  int    `json:"failed_count"`
 	TotalQuota   int    `json:"total_quota"`
 	Reason       string `json:"reason"`
+}
+
+type batchSubscriptionsExtendExecuteSummary struct {
+	TotalUsers               int   `json:"total_users"`
+	MatchedUserCount         int   `json:"matched_user_count"`
+	SuccessUserCount         int   `json:"success_user_count"`
+	SkippedUserCount         int   `json:"skipped_user_count"`
+	FailedUserCount          int   `json:"failed_user_count"`
+	UpdatedSubscriptionCount int   `json:"updated_subscription_count"`
+	ExtensionDays            int   `json:"extension_days"`
+	ExtensionSeconds         int64 `json:"extension_seconds"`
+}
+
+type batchSubscriptionTarget struct {
+	UserID                  int
+	Username                string
+	ActiveSubscriptionCount int
 }
 
 func PreviewBatchUsers(operatorID int, req dto.BatchUsersPreviewRequest) (*dto.BatchPreviewResponse, error) {
@@ -455,6 +483,131 @@ func ExecuteBatchQuota(ctx BatchOperationContext, req dto.BatchQuotaExecuteReque
 	}, nil
 }
 
+func PreviewBatchSubscriptionsExtend(operatorID int, req dto.BatchSubscriptionsExtendPreviewRequest) (*dto.BatchPreviewResponse, error) {
+	validated, targets, summary, warnings, err := buildBatchSubscriptionsExtendPreview(req)
+	if err != nil {
+		return nil, err
+	}
+	_ = targets
+	payloadBytes, err := common.Marshal(validated)
+	if err != nil {
+		return nil, err
+	}
+	token, expiresAt, err := buildPreviewToken(model.AdminBatchTypeSubscriptionsExtend, operatorID, string(payloadBytes))
+	if err != nil {
+		return nil, err
+	}
+	return &dto.BatchPreviewResponse{
+		BatchType:        model.AdminBatchTypeSubscriptionsExtend,
+		Stage:            "preview",
+		PreviewToken:     token,
+		PreviewExpiresAt: expiresAt,
+		RiskLevel:        previewRiskLevel(summary.MatchedUserCount),
+		Warnings:         warnings,
+		Summary:          summary,
+		Samples:          summary.SampleUsernames,
+		CanExecute:       summary.MatchedSubscriptionCount > 0,
+	}, nil
+}
+
+func ExecuteBatchSubscriptionsExtend(ctx BatchOperationContext, req dto.BatchSubscriptionsExtendExecuteRequest) (*dto.BatchExecuteResponse, error) {
+	validated, targets, previewSummary, _, err := buildBatchSubscriptionsExtendPreview(req.BatchSubscriptionsExtendPreviewRequest)
+	if err != nil {
+		return nil, err
+	}
+	if err := verifyPreviewToken(model.AdminBatchTypeSubscriptionsExtend, ctx.OperatorID, req.PreviewToken, validated); err != nil {
+		return nil, err
+	}
+
+	batchID := generateBatchID("SUB")
+	requestPayloadMasked, _ := marshalToJSONString(validated)
+	scopeSummary, _ := marshalToJSONString(previewSummary)
+	job := model.NewAdminBatchJob(batchID, model.AdminBatchTypeSubscriptionsExtend, ctx.OperatorID, ctx.OperatorUsername, requestPayloadMasked, scopeSummary, "", ctx.SourceIP, ctx.UserAgent)
+	if err := model.CreateAdminBatchJob(job); err != nil {
+		return nil, err
+	}
+
+	items := make([]model.AdminBatchJobItem, 0, len(targets))
+	failedItems := make([]dto.BatchFailureItem, 0)
+	failedLines := make([]string, 0)
+	successUserCount := 0
+	failedUserCount := 0
+	updatedSubscriptionCount := 0
+	extensionSeconds := int64(validated.Days) * 24 * 3600
+
+	for _, target := range targets {
+		updatedCount, err := model.ExtendAllActiveSubscriptionsForUser(target.UserID, extensionSeconds)
+		if err != nil {
+			failedUserCount++
+			failedItems = append(failedItems, dto.BatchFailureItem{
+				TargetKey:     target.Username,
+				TargetID:      target.UserID,
+				ReasonCode:    "subscription_extend_failed",
+				ReasonMessage: err.Error(),
+			})
+			failedLines = append(failedLines, fmt.Sprintf("%s,failed,%s", target.Username, err.Error()))
+			items = append(items, newBatchItem(job.Id, model.AdminBatchItemTypeSubscription, target.Username, target.UserID, model.AdminBatchItemResultFailed, "subscription_extend_failed", err.Error(), 0, ""))
+			continue
+		}
+		if updatedCount <= 0 {
+			items = append(items, newBatchItem(job.Id, model.AdminBatchItemTypeSubscription, target.Username, target.UserID, model.AdminBatchItemResultSkipped, "no_active_subscription", "no active subscription at execution time", 0, ""))
+			continue
+		}
+
+		successUserCount++
+		updatedSubscriptionCount += updatedCount
+		items = append(items, newBatchItem(job.Id, model.AdminBatchItemTypeSubscription, target.Username, target.UserID, model.AdminBatchItemResultSuccess, "", "", 0, ""))
+	}
+
+	if err := model.CreateAdminBatchJobItems(items); err != nil {
+		return nil, err
+	}
+
+	skippedUserCount := previewSummary.TotalUsers - successUserCount - failedUserCount
+	if skippedUserCount < 0 {
+		skippedUserCount = 0
+	}
+	summary := batchSubscriptionsExtendExecuteSummary{
+		TotalUsers:               previewSummary.TotalUsers,
+		MatchedUserCount:         previewSummary.MatchedUserCount,
+		SuccessUserCount:         successUserCount,
+		SkippedUserCount:         skippedUserCount,
+		FailedUserCount:          failedUserCount,
+		UpdatedSubscriptionCount: updatedSubscriptionCount,
+		ExtensionDays:            validated.Days,
+		ExtensionSeconds:         extensionSeconds,
+	}
+	summaryJSON, _ := marshalToJSONString(summary)
+	status := summarizeBatchStatus(successUserCount, failedUserCount)
+	if successUserCount == 0 && failedUserCount == 0 {
+		status = model.AdminBatchStatusCompleted
+	}
+	if err := model.UpdateAdminBatchJobResult(job, status, successUserCount, failedUserCount, summaryJSON); err != nil {
+		return nil, err
+	}
+
+	content := strings.Join(failedLines, "\n")
+	if content != "" {
+		content += "\n"
+	}
+	return &dto.BatchExecuteResponse{
+		BatchID:     batchID,
+		BatchType:   model.AdminBatchTypeSubscriptionsExtend,
+		Stage:       "execute",
+		Status:      status,
+		Summary:     summary,
+		FailedItems: failedItems,
+		Export: dto.BatchExportPayload{
+			Available:   len(failedLines) > 0,
+			Format:      batchExportFormatCSV,
+			Filename:    fmt.Sprintf("subscription-extend-failures-%s.csv", strings.ToLower(batchID)),
+			Content:     content,
+			Sensitive:   false,
+			OneTimeOnly: false,
+		},
+	}, nil
+}
+
 func ListAdminBatchJobs() (*dto.AdminBatchJobListResponse, error) {
 	jobs, total, err := model.ListAdminBatchJobs(10)
 	if err != nil {
@@ -681,6 +834,49 @@ func buildBatchQuotaPreview(req dto.BatchQuotaPreviewRequest) (dto.BatchQuotaPre
 	}, warnings, nil
 }
 
+func buildBatchSubscriptionsExtendPreview(req dto.BatchSubscriptionsExtendPreviewRequest) (dto.BatchSubscriptionsExtendPreviewRequest, []batchSubscriptionTarget, batchSubscriptionsExtendPreviewSummary, []string, error) {
+	validated := req
+	validated.Days = req.Days
+	if validated.Days <= 0 || validated.Days > batchSubscriptionMaxDays {
+		return validated, nil, batchSubscriptionsExtendPreviewSummary{}, nil, fmt.Errorf("days must be between 1 and %d", batchSubscriptionMaxDays)
+	}
+
+	totalUsers, targets, matchedSubscriptionCount, err := loadBatchSubscriptionTargets()
+	if err != nil {
+		return validated, nil, batchSubscriptionsExtendPreviewSummary{}, nil, err
+	}
+
+	samples := make([]string, 0, minInt(len(targets), 10))
+	for _, target := range targets {
+		if len(samples) >= 10 {
+			break
+		}
+		samples = append(samples, target.Username)
+	}
+
+	warnings := []string{
+		"该操作会立即生效，不支持一键回滚。",
+		"只会延期当前仍生效中的订阅；没有生效订阅的用户会被跳过。",
+		"命中的用户如果有多条生效订阅，会全部一起延期。",
+	}
+
+	warnings = []string{
+		"This operation takes effect immediately and cannot be rolled back in one click.",
+		"Only currently active subscriptions will be extended; users without active subscriptions will be skipped.",
+		"If a matched user has multiple active subscriptions, all of them will be extended together.",
+	}
+
+	return validated, targets, batchSubscriptionsExtendPreviewSummary{
+		TotalUsers:               int(totalUsers),
+		MatchedUserCount:         len(targets),
+		MatchedSubscriptionCount: matchedSubscriptionCount,
+		SkippedUserCount:         int(totalUsers) - len(targets),
+		ExtensionDays:            validated.Days,
+		ExtensionSeconds:         int64(validated.Days) * 24 * 3600,
+		SampleUsernames:          samples,
+	}, warnings, nil
+}
+
 func loadBatchQuotaUsers(req dto.BatchQuotaPreviewRequest) ([]*model.User, error) {
 	query := model.DB.Model(&model.User{})
 	if req.ScopeType == batchScopeGroup {
@@ -694,6 +890,32 @@ func loadBatchQuotaUsers(req dto.BatchQuotaPreviewRequest) ([]*model.User, error
 		return nil, err
 	}
 	return users, nil
+}
+
+func loadBatchSubscriptionTargets() (int64, []batchSubscriptionTarget, int, error) {
+	var totalUsers int64
+	if err := model.DB.Model(&model.User{}).Count(&totalUsers).Error; err != nil {
+		return 0, nil, 0, err
+	}
+
+	now := model.GetDBTimestamp()
+	rows := make([]batchSubscriptionTarget, 0)
+	err := model.DB.Table("user_subscriptions AS us").
+		Select("users.id AS user_id, users.username AS username, COUNT(us.id) AS active_subscription_count").
+		Joins("JOIN users ON users.id = us.user_id").
+		Where("us.status = ? AND us.end_time > ?", "active", now).
+		Group("users.id, users.username").
+		Order("users.id ASC").
+		Scan(&rows).Error
+	if err != nil {
+		return 0, nil, 0, err
+	}
+
+	totalSubscriptions := 0
+	for _, row := range rows {
+		totalSubscriptions += row.ActiveSubscriptionCount
+	}
+	return totalUsers, rows, totalSubscriptions, nil
 }
 
 func validateGroup(group string) error {

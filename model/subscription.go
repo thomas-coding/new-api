@@ -1226,3 +1226,63 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		return tx.Save(&sub).Error
 	})
 }
+
+// ExtendAllActiveSubscriptionsForUser extends all currently active subscriptions
+// for a user. Expired or cancelled subscriptions are ignored.
+func ExtendAllActiveSubscriptionsForUser(userId int, durationSeconds int64) (int, error) {
+	if userId <= 0 {
+		return 0, errors.New("invalid userId")
+	}
+	if durationSeconds <= 0 {
+		return 0, errors.New("durationSeconds must be > 0")
+	}
+
+	now := GetDBTimestamp()
+	updatedCount := 0
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var subs []UserSubscription
+		if err := tx.Set("gorm:query_option", "FOR UPDATE").
+			Where("user_id = ? AND status = ? AND end_time > ?", userId, "active", now).
+			Order("end_time asc, id asc").
+			Find(&subs).Error; err != nil {
+			return err
+		}
+		if len(subs) == 0 {
+			return nil
+		}
+
+		for i := range subs {
+			sub := &subs[i]
+			plan, err := getSubscriptionPlanByIdTx(tx, sub.PlanId)
+			if err != nil {
+				return err
+			}
+			if err := maybeResetUserSubscriptionWithPlanTx(tx, sub, plan, now); err != nil {
+				return err
+			}
+
+			sub.EndTime += durationSeconds
+			sub.UpdatedAt = common.GetTimestamp()
+			if err := tx.Model(sub).Updates(map[string]interface{}{
+				"end_time":   sub.EndTime,
+				"updated_at": sub.UpdatedAt,
+			}).Error; err != nil {
+				return err
+			}
+
+			// If the old end_time prevented future resets, extending the subscription
+			// may create a new upcoming reset point that needs to be restored now.
+			if sub.NextResetTime == 0 && NormalizeResetPeriod(plan.QuotaResetPeriod) != SubscriptionResetNever {
+				if err := maybeResetUserSubscriptionWithPlanTx(tx, sub, plan, now); err != nil {
+					return err
+				}
+			}
+			updatedCount++
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return updatedCount, nil
+}

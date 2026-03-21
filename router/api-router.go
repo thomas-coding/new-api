@@ -208,6 +208,8 @@ func SetApiRouter(router *gin.Engine) {
 			adminBatchRoute.POST("/redemptions/execute", controller.ExecuteBatchRedemptions)
 			adminBatchRoute.POST("/quota/preview", controller.PreviewBatchQuota)
 			adminBatchRoute.POST("/quota/execute", controller.ExecuteBatchQuota)
+			adminBatchRoute.POST("/subscriptions/preview", controller.PreviewBatchSubscriptionsExtend)
+			adminBatchRoute.POST("/subscriptions/execute", controller.ExecuteBatchSubscriptionsExtend)
 			adminBatchRoute.GET("/jobs", controller.ListAdminBatchJobs)
 			adminBatchRoute.GET("/jobs/:batch_id", controller.GetAdminBatchJob)
 		}

@@ -91,6 +91,34 @@ func ExecuteBatchQuota(c *gin.Context) {
 	common.ApiSuccess(c, resp)
 }
 
+func PreviewBatchSubscriptionsExtend(c *gin.Context) {
+	var req dto.BatchSubscriptionsExtendPreviewRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	resp, err := service.PreviewBatchSubscriptionsExtend(c.GetInt("id"), req)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, resp)
+}
+
+func ExecuteBatchSubscriptionsExtend(c *gin.Context) {
+	var req dto.BatchSubscriptionsExtendExecuteRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	resp, err := service.ExecuteBatchSubscriptionsExtend(serviceBatchContext(c), req)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, resp)
+}
+
 func ListAdminBatchJobs(c *gin.Context) {
 	resp, err := service.ListAdminBatchJobs()
 	if err != nil {
