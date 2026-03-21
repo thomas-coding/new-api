@@ -504,6 +504,17 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	return sub, nil
 }
 
+var subscriptionUserCacheInvalidator = invalidateUserCache
+
+func invalidateUserCacheForSubscription(userId int) {
+	if userId <= 0 {
+		return
+	}
+	if err := subscriptionUserCacheInvalidator(userId); err != nil {
+		common.SysLog("failed to invalidate user cache after subscription mutation: " + err.Error())
+	}
+}
+
 func GrantUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *SubscriptionPlan, source string) (*UserSubscription, bool, error) {
 	if tx == nil {
 		return nil, false, errors.New("tx is nil")
@@ -553,7 +564,6 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 	var logPlanTitle string
 	var logMoney float64
 	var logPaymentMethod string
-	var upgradeGroup string
 	err := DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := tx.Set("gorm:query_option", "FOR UPDATE").Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
@@ -572,7 +582,6 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 		if !plan.Enabled {
 			// still allow completion for already purchased orders
 		}
-		upgradeGroup = strings.TrimSpace(plan.UpgradeGroup)
 		_, err = CreateUserSubscriptionFromPlanTx(tx, order.UserId, plan, "order")
 		if err != nil {
 			return err
@@ -597,8 +606,8 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string) error {
 	if err != nil {
 		return err
 	}
-	if upgradeGroup != "" && logUserId > 0 {
-		_ = UpdateUserGroupCache(logUserId, upgradeGroup)
+	if logUserId > 0 {
+		invalidateUserCacheForSubscription(logUserId)
 	}
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
@@ -679,8 +688,8 @@ func AdminBindSubscription(userId int, planId int, sourceNote string) (string, e
 	if err != nil {
 		return "", err
 	}
+	invalidateUserCacheForSubscription(userId)
 	if strings.TrimSpace(plan.UpgradeGroup) != "" {
-		_ = UpdateUserGroupCache(userId, plan.UpgradeGroup)
 		return fmt.Sprintf("用户分组将升级到 %s", plan.UpgradeGroup), nil
 	}
 	return "", nil
@@ -753,7 +762,6 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 		return "", errors.New("invalid userSubscriptionId")
 	}
 	now := common.GetTimestamp()
-	cacheGroup := ""
 	downgradeGroup := ""
 	var userId int
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -775,7 +783,6 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 			return err
 		}
 		if target != "" {
-			cacheGroup = target
 			downgradeGroup = target
 		}
 		return nil
@@ -783,9 +790,7 @@ func AdminInvalidateUserSubscription(userSubscriptionId int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if cacheGroup != "" && userId > 0 {
-		_ = UpdateUserGroupCache(userId, cacheGroup)
-	}
+	invalidateUserCacheForSubscription(userId)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
@@ -798,7 +803,6 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 		return "", errors.New("invalid userSubscriptionId")
 	}
 	now := common.GetTimestamp()
-	cacheGroup := ""
 	downgradeGroup := ""
 	var userId int
 	err := DB.Transaction(func(tx *gorm.DB) error {
@@ -813,7 +817,6 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 			return err
 		}
 		if target != "" {
-			cacheGroup = target
 			downgradeGroup = target
 		}
 		if err := tx.Where("id = ?", userSubscriptionId).Delete(&UserSubscription{}).Error; err != nil {
@@ -824,9 +827,7 @@ func AdminDeleteUserSubscription(userSubscriptionId int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if cacheGroup != "" && userId > 0 {
-		_ = UpdateUserGroupCache(userId, cacheGroup)
-	}
+	invalidateUserCacheForSubscription(userId)
 	if downgradeGroup != "" {
 		return fmt.Sprintf("用户分组将回退到 %s", downgradeGroup), nil
 	}
@@ -865,7 +866,7 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 		}
 	}
 	for userId := range userIds {
-		cacheGroup := ""
+		shouldInvalidateCache := false
 		err := DB.Transaction(func(tx *gorm.DB) error {
 			res := tx.Model(&UserSubscription{}).
 				Where("user_id = ? AND status = ? AND end_time > 0 AND end_time <= ?", userId, "active", now).
@@ -877,6 +878,7 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 				return res.Error
 			}
 			expiredCount += int(res.RowsAffected)
+			shouldInvalidateCache = res.RowsAffected > 0
 
 			// If there's an active upgraded subscription, keep current group.
 			var activeSub UserSubscription
@@ -915,14 +917,13 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 				Update("group", prevGroup).Error; err != nil {
 				return err
 			}
-			cacheGroup = prevGroup
 			return nil
 		})
 		if err != nil {
 			return expiredCount, err
 		}
-		if cacheGroup != "" {
-			_ = UpdateUserGroupCache(userId, cacheGroup)
+		if shouldInvalidateCache {
+			invalidateUserCacheForSubscription(userId)
 		}
 	}
 	return expiredCount, nil
