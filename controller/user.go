@@ -183,6 +183,16 @@ func Register(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if _, err := model.CreateDefaultTokenForUser(cleanUser.Id); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
+		common.SysLog("failed to create default token: " + err.Error())
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+	})
+	return
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -828,6 +838,11 @@ func CreateUser(c *gin.Context) {
 	}
 	if err := cleanUser.Insert(0); err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if _, err := model.CreateDefaultTokenForUser(cleanUser.Id); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
+		common.SysLog("failed to create default token: " + err.Error())
 		return
 	}
 

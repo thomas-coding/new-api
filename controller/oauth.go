@@ -275,6 +275,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 			if err := user.InsertWithTx(tx, inviterId); err != nil {
 				return err
 			}
+			if _, err := model.CreateDefaultTokenForUserTx(tx, user.Id); err != nil {
+				return err
+			}
 
 			// Create OAuth binding
 			binding := &model.UserOAuthBinding{
@@ -299,6 +302,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
 			// Create user
 			if err := user.InsertWithTx(tx, inviterId); err != nil {
+				return err
+			}
+			if _, err := model.CreateDefaultTokenForUserTx(tx, user.Id); err != nil {
 				return err
 			}
 

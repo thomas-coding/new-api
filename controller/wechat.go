@@ -102,6 +102,14 @@ func WeChatAuth(c *gin.Context) {
 				})
 				return
 			}
+			if _, err := model.CreateDefaultTokenForUser(user.Id); err != nil {
+				common.SysLog("failed to create default token for wechat user: " + err.Error())
+				c.JSON(http.StatusOK, gin.H{
+					"success": false,
+					"message": "创建默认令牌失败",
+				})
+				return
+			}
 		} else {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
