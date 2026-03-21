@@ -56,6 +56,7 @@ export default function GeneralSettings(props) {
     DefaultCollapseSidebar: false,
     DemoSiteEnabled: false,
     SelfUseModeEnabled: false,
+    ShowInvitationCard: true,
     'token_setting.max_user_tokens': 1000,
   });
   const refForm = useRef();
@@ -289,6 +290,17 @@ export default function GeneralSettings(props) {
               </Col>
             </Row>
             <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'ShowInvitationCard'}
+                  label={t('显示邀请奖励卡片')}
+                  extraText={t('关闭后，钱包页面不再向用户显示邀请奖励卡片')}
+                  size='default'
+                  checkedText='开'
+                  uncheckedText='关'
+                  onChange={handleFieldChange('ShowInvitationCard')}
+                />
+              </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>
                 <Form.InputNumber
                   label={t('用户最大令牌数量')}
