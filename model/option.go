@@ -37,6 +37,8 @@ func InitOptionMap() {
 	common.OptionMap["ImageDownloadPermission"] = strconv.Itoa(common.ImageDownloadPermission)
 	common.OptionMap["PasswordLoginEnabled"] = strconv.FormatBool(common.PasswordLoginEnabled)
 	common.OptionMap["PasswordRegisterEnabled"] = strconv.FormatBool(common.PasswordRegisterEnabled)
+	common.OptionMap["PasswordRegisterCodeEnabled"] = strconv.FormatBool(common.PasswordRegisterCodeEnabled)
+	common.OptionMap["PasswordRegisterCodes"] = "[]"
 	common.OptionMap["EmailVerificationEnabled"] = strconv.FormatBool(common.EmailVerificationEnabled)
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
 	common.OptionMap["LinuxDOOAuthEnabled"] = strconv.FormatBool(common.LinuxDOOAuthEnabled)
@@ -149,6 +151,7 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
+	common.UpdatePasswordRegisterCodes(common.OptionMap["PasswordRegisterCodes"])
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -223,6 +226,8 @@ func updateOptionMap(key string, value string) (err error) {
 		switch key {
 		case "PasswordRegisterEnabled":
 			common.PasswordRegisterEnabled = boolValue
+		case "PasswordRegisterCodeEnabled":
+			common.PasswordRegisterCodeEnabled = boolValue
 		case "PasswordLoginEnabled":
 			common.PasswordLoginEnabled = boolValue
 		case "EmailVerificationEnabled":
@@ -304,6 +309,8 @@ func updateOptionMap(key string, value string) (err error) {
 		}
 	}
 	switch key {
+	case "PasswordRegisterCodes":
+		common.UpdatePasswordRegisterCodes(value)
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
 	case "SMTPServer":

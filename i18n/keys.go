@@ -91,6 +91,8 @@ const (
 	MsgUserTopUpProcessing           = "user.topup_processing"
 	MsgUserRegisterFailed            = "user.register_failed"
 	MsgUserDefaultTokenFailed        = "user.default_token_failed"
+	MsgUserRegisterCodeRequired      = "user.register_code_required"
+	MsgUserRegisterCodeInvalid       = "user.register_code_invalid"
 	MsgUserAffCodeEmpty              = "user.aff_code_empty"
 	MsgUserEmailEmpty                = "user.email_empty"
 	MsgUserGitHubIdEmpty             = "user.github_id_empty"

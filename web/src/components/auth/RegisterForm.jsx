@@ -77,6 +77,7 @@ const RegisterForm = () => {
     username: '',
     password: '',
     password2: '',
+    registration_code: '',
     email: '',
     verification_code: '',
     wechat_verification_code: '',
@@ -142,9 +143,27 @@ const RegisterForm = () => {
   );
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
+  const [showRegistrationCode, setShowRegistrationCode] = useState(false);
+
+  const refreshRegisterRequirements = async () => {
+    try {
+      const res = await API.get('/api/status');
+      const latestStatus = res?.data?.success ? res.data.data : null;
+      if (latestStatus) {
+        setShowRegistrationCode(
+          !!latestStatus.password_register_code_enabled,
+        );
+        setShowEmailVerification(!!latestStatus.email_verification);
+        localStorage.setItem('status', JSON.stringify(latestStatus));
+      }
+    } catch (error) {
+      // Ignore refresh failures and fall back to backend error messaging.
+    }
+  };
 
   useEffect(() => {
     setShowEmailVerification(!!status?.email_verification);
+    setShowRegistrationCode(!!status?.password_register_code_enabled);
     if (status?.turnstile_check) {
       setTurnstileEnabled(true);
       setTurnstileSiteKey(status.turnstile_site_key);
@@ -244,6 +263,7 @@ const RegisterForm = () => {
           navigate('/login');
           showSuccess('注册成功！');
         } else {
+          await refreshRegisterRequirements();
           showError(message);
         }
       } catch (error) {
@@ -601,6 +621,19 @@ const RegisterForm = () => {
                   onChange={(value) => handleChange('password2', value)}
                   prefix={<IconLock />}
                 />
+
+                {showRegistrationCode && (
+                  <Form.Input
+                    field='registration_code'
+                    label={t('邀请码')}
+                    placeholder={t('请输入邀请码')}
+                    name='registration_code'
+                    onChange={(value) =>
+                      handleChange('registration_code', value)
+                    }
+                    prefix={<IconKey />}
+                  />
+                )}
 
                 {showEmailVerification && (
                   <>

@@ -157,6 +157,16 @@ func Register(c *gin.Context) {
 			return
 		}
 	}
+	if common.PasswordRegisterCodeEnabled {
+		if strings.TrimSpace(user.RegistrationCode) == "" {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeRequired)
+			return
+		}
+		if !common.IsPasswordRegisterCodeValid(user.RegistrationCode) {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeInvalid)
+			return
+		}
+	}
 	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)

@@ -49,6 +49,7 @@ const SystemSetting = () => {
   let [inputs, setInputs] = useState({
     PasswordLoginEnabled: '',
     PasswordRegisterEnabled: '',
+    PasswordRegisterCodeEnabled: '',
     EmailVerificationEnabled: '',
     GitHubOAuthEnabled: '',
     GitHubClientId: '',
@@ -125,6 +126,7 @@ const SystemSetting = () => {
   const [domainList, setDomainList] = useState([]);
   const [ipList, setIpList] = useState([]);
   const [allowedPorts, setAllowedPorts] = useState([]);
+  const [passwordRegisterCodes, setPasswordRegisterCodes] = useState([]);
 
   const getOptions = async () => {
     setLoading(true);
@@ -136,6 +138,21 @@ const SystemSetting = () => {
         switch (item.key) {
           case 'TopupGroupRatio':
             item.value = JSON.stringify(JSON.parse(item.value), null, 2);
+            break;
+          case 'PasswordRegisterCodes':
+            try {
+              const codes = item.value ? JSON.parse(item.value) : [];
+              setPasswordRegisterCodes(Array.isArray(codes) ? codes : []);
+            } catch (e) {
+              setPasswordRegisterCodes(
+                item.value
+                  ? item.value
+                      .split(',')
+                      .map((code) => code.trim())
+                      .filter(Boolean)
+                  : [],
+              );
+            }
             break;
           case 'EmailDomainWhitelist':
             setEmailDomainWhitelist(item.value ? item.value.split(',') : []);
@@ -173,6 +190,7 @@ const SystemSetting = () => {
             break;
           case 'PasswordLoginEnabled':
           case 'PasswordRegisterEnabled':
+          case 'PasswordRegisterCodeEnabled':
           case 'EmailVerificationEnabled':
           case 'GitHubOAuthEnabled':
           case 'WeChatAuthEnabled':
@@ -358,6 +376,15 @@ const SystemSetting = () => {
     } else {
       showError(t('邮箱域名白名单格式不正确'));
     }
+  };
+
+  const submitPasswordRegisterCodes = async () => {
+    await updateOptions([
+      {
+        key: 'PasswordRegisterCodes',
+        value: JSON.stringify(passwordRegisterCodes),
+      },
+    ]);
   };
 
   const submitSSRF = async () => {
@@ -1007,6 +1034,15 @@ const SystemSetting = () => {
                         {t('允许通过密码进行注册')}
                       </Form.Checkbox>
                       <Form.Checkbox
+                        field='PasswordRegisterCodeEnabled'
+                        noLabel
+                        onChange={(e) =>
+                          handleCheckboxChange('PasswordRegisterCodeEnabled', e)
+                        }
+                      >
+                        {t('启用密码注册邀请码')}
+                      </Form.Checkbox>
+                      <Form.Checkbox
                         field='EmailVerificationEnabled'
                         noLabel
                         onChange={(e) =>
@@ -1033,6 +1069,18 @@ const SystemSetting = () => {
                       >
                         {t('允许 Turnstile 用户校验')}
                       </Form.Checkbox>
+                      <TagInput
+                        value={passwordRegisterCodes}
+                        onChange={setPasswordRegisterCodes}
+                        placeholder={t('输入邀请码后回车，可添加多条')}
+                        style={{ width: '100%', marginTop: 16 }}
+                      />
+                      <Button
+                        onClick={submitPasswordRegisterCodes}
+                        style={{ marginTop: 10 }}
+                      >
+                        {t('保存邀请码列表')}
+                      </Button>
                     </Col>
                     <Col xs={24} sm={24} md={12} lg={12} xl={12}>
                       <Form.Checkbox
