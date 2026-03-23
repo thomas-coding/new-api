@@ -37,6 +37,7 @@ const OperationSetting = () => {
     QuotaForInviter: 0,
     QuotaForInvitee: 0,
     ShowInvitationCard: true,
+    ShowTopupStore: false,
     'quota_setting.enable_free_model_pre_consume': true,
 
     /* 通用设置 */

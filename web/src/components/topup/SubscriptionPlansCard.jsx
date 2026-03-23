@@ -37,7 +37,6 @@ import { formatSubscriptionQuotaLabel } from '../../helpers/subscriptionFormat';
 
 const { Text } = Typography;
 
-const SHOP_URL = 'https://pay.ldxp.cn/shop/5J1Y8A0I';
 
 const SubscriptionPlansCard = ({
   t,
@@ -48,6 +47,8 @@ const SubscriptionPlansCard = ({
   activeSubscriptions = [],
   allSubscriptions = [],
   reloadSubscriptionSelf,
+  showTopupStore = false,
+  topUpLink = '',
   withCard = true,
 }) => {
   const [refreshing, setRefreshing] = useState(false);
@@ -273,58 +274,62 @@ const SubscriptionPlansCard = ({
           </>
         ) : (
           <div className='text-xs text-gray-500 mt-2'>
-            {t('当前暂无订阅，购买兑换码后可在上方完成兑换。')}
+            {showTopupStore
+              ? t('当前暂无订阅，购买兑换码后可在上方完成兑换。')
+              : t('当前暂无订阅，获取兑换码后可在上方完成兑换。')}
           </div>
         )}
       </Card>
 
-      <Card className='!rounded-xl w-full' bodyStyle={{ padding: '16px' }}>
-        <div className='flex items-center justify-between gap-3 mb-4'>
-          <Text strong>{t('购买方式')}</Text>
-          <Button
-            size='small'
-            theme='solid'
-            type='primary'
-            onClick={() => window.open(SHOP_URL, '_blank', 'noopener,noreferrer')}
-          >
-            {t('打开店铺')}
-          </Button>
-        </div>
+      {showTopupStore && topUpLink ? (
+        <Card className='!rounded-xl w-full' bodyStyle={{ padding: '16px' }}>
+          <div className='flex items-center justify-between gap-3 mb-4'>
+            <Text strong>{t('购买方式')}</Text>
+            <Button
+              size='small'
+              theme='solid'
+              type='primary'
+              onClick={() => window.open(topUpLink, '_blank', 'noopener,noreferrer')}
+            >
+              {t('打开店铺')}
+            </Button>
+          </div>
 
-        <div className='grid grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_220px] gap-5 items-start'>
-          <div className='space-y-4'>
-            <div>
-              <Text type='tertiary' size='small'>
-                {t('店铺地址')}
-              </Text>
-              <div className='mt-2 break-all'>
-                <a
-                  href={SHOP_URL}
-                  target='_blank'
-                  rel='noreferrer'
-                  className='text-blue-600 underline'
-                >
-                  {SHOP_URL}
-                </a>
+          <div className='grid grid-cols-1 md:grid-cols-[minmax(0,1.4fr)_220px] gap-5 items-start'>
+            <div className='space-y-4'>
+              <div>
+                <Text type='tertiary' size='small'>
+                  {t('店铺地址')}
+                </Text>
+                <div className='mt-2 break-all'>
+                  <a
+                    href={topUpLink}
+                    target='_blank'
+                    rel='noreferrer'
+                    className='text-blue-600 underline'
+                  >
+                    {topUpLink}
+                  </a>
+                </div>
+              </div>
+
+              <div className='text-sm text-gray-500 leading-7'>
+                <div>{t('请先在店铺购买兑换码。')}</div>
+                <div>{t('购买后复制兑换码，回到本页完成充值或开通订阅。')}</div>
               </div>
             </div>
 
-            <div className='text-sm text-gray-500 leading-7'>
-              <div>{t('请先在店铺购买兑换码。')}</div>
-              <div>{t('购买后复制兑换码，回到本页完成充值或开通订阅。')}</div>
+            <div className='flex flex-col items-start md:items-center gap-2'>
+              <Text type='tertiary' size='small'>
+                {t('二维码')}
+              </Text>
+              <div className='rounded-xl border border-gray-200 bg-white p-3 shadow-sm'>
+                <QRCodeSVG value={topUpLink} size={180} includeMargin />
+              </div>
             </div>
           </div>
-
-          <div className='flex flex-col items-start md:items-center gap-2'>
-            <Text type='tertiary' size='small'>
-              {t('二维码')}
-            </Text>
-            <div className='rounded-xl border border-gray-200 bg-white p-3 shadow-sm'>
-              <QRCodeSVG value={SHOP_URL} size={180} includeMargin />
-            </div>
-          </div>
-        </div>
-      </Card>
+        </Card>
+      ) : null}
     </Space>
   );
 

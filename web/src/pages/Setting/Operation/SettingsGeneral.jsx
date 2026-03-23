@@ -57,6 +57,7 @@ export default function GeneralSettings(props) {
     DemoSiteEnabled: false,
     SelfUseModeEnabled: false,
     ShowInvitationCard: true,
+    ShowTopupStore: false,
     'token_setting.max_user_tokens': 1000,
   });
   const refForm = useRef();
@@ -299,6 +300,19 @@ export default function GeneralSettings(props) {
                   checkedText='开'
                   uncheckedText='关'
                   onChange={handleFieldChange('ShowInvitationCard')}
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'ShowTopupStore'}
+                  label={t('显示店铺购买入口')}
+                  extraText={t(
+                    '关闭后，钱包页面不再向用户显示店铺购买入口；开启后仅在已配置充值链接时显示',
+                  )}
+                  size='default'
+                  checkedText='开'
+                  uncheckedText='关'
+                  onChange={handleFieldChange('ShowTopupStore')}
                 />
               </Col>
               <Col xs={24} sm={12} md={8} lg={8} xl={8}>

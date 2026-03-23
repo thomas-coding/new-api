@@ -70,6 +70,7 @@ func GetStatus(c *gin.Context) {
 		"turnstile_site_key":             common.TurnstileSiteKey,
 		"password_register_code_enabled": common.PasswordRegisterCodeEnabled,
 		"top_up_link":                    common.TopUpLink,
+		"show_topup_store":               common.ShowTopupStore,
 		"show_invitation_card":           common.ShowInvitationCard,
 		"docs_link":                      operation_setting.GetGeneralSetting().DocsLink,
 		"quota_per_unit":                 common.QuotaPerUnit,

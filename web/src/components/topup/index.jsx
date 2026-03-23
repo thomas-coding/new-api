@@ -54,6 +54,7 @@ const TopUp = () => {
   const [topUpLink, setTopUpLink] = useState(
     statusState?.status?.top_up_link || '',
   );
+  const showTopupStore = (statusState?.status?.show_topup_store ?? false) && !!topUpLink;
   const [enableOnlineTopUp, setEnableOnlineTopUp] = useState(
     statusState?.status?.enable_online_topup || false,
   );
@@ -778,6 +779,7 @@ const TopUp = () => {
           topUp={topUp}
           isSubmitting={isSubmitting}
           topUpLink={topUpLink}
+          showTopupStore={showTopupStore}
           openTopUpLink={openTopUpLink}
           userState={userState}
           renderQuota={renderQuota}

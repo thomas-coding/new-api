@@ -34,7 +34,6 @@ import SubscriptionPlansCard from './SubscriptionPlansCard';
 
 const { Text } = Typography;
 
-const SHOP_URL = 'https://pay.ldxp.cn/shop/5J1Y8A0I';
 
 const RechargeCard = ({
   t,
@@ -52,6 +51,8 @@ const RechargeCard = ({
   activeSubscriptions = [],
   allSubscriptions = [],
   reloadSubscriptionSelf,
+  showTopupStore = false,
+  topUpLink = '',
 }) => {
   const unifiedHint = statusLoading ? (
     <div className='py-4 flex justify-center'>
@@ -65,7 +66,11 @@ const RechargeCard = ({
       description={
         <div className='text-sm leading-6'>
           <div>{t('订阅和额度均通过兑换码完成。')}</div>
-          <div>{t('请先在店铺购买兑换码，再回到本页完成充值或开通订阅。')}</div>
+          <div>
+            {showTopupStore
+              ? t('请先在店铺购买兑换码，再回到本页完成充值或开通订阅。')
+              : t('请联系管理员获取兑换码后，再回到本页完成充值或开通订阅。')}
+          </div>
         </div>
       }
     />
@@ -221,17 +226,19 @@ const RechargeCard = ({
               showClear
               style={{ width: '100%' }}
               extraText={
-                <Text type='tertiary'>
-                  {t('还没有兑换码？')}
-                  <a
-                    href={SHOP_URL}
-                    target='_blank'
-                    rel='noreferrer'
-                    className='ml-1 underline'
-                  >
-                    {t('前往店铺购买')}
-                  </a>
-                </Text>
+                showTopupStore && topUpLink ? (
+                  <Text type='tertiary'>
+                    {t('还没有兑换码？')}
+                    <a
+                      href={topUpLink}
+                      target='_blank'
+                      rel='noreferrer'
+                      className='ml-1 underline'
+                    >
+                      {t('前往店铺购买')}
+                    </a>
+                  </Text>
+                ) : null
               }
             />
           </Form>
@@ -246,6 +253,8 @@ const RechargeCard = ({
           activeSubscriptions={activeSubscriptions}
           allSubscriptions={allSubscriptions}
           reloadSubscriptionSelf={reloadSubscriptionSelf}
+          showTopupStore={showTopupStore}
+          topUpLink={topUpLink}
           withCard={false}
         />
       </Space>
