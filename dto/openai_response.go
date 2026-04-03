@@ -377,13 +377,16 @@ type ResponsesStreamResponse struct {
 	Response *OpenAIResponsesResponse `json:"response,omitempty"`
 	Delta    string                   `json:"delta,omitempty"`
 	Item     *ResponsesOutput         `json:"item,omitempty"`
+	Code     string                   `json:"code,omitempty"`
+	Message  string                   `json:"message,omitempty"`
 	// - response.function_call_arguments.delta
 	// - response.function_call_arguments.done
-	OutputIndex  *int                           `json:"output_index,omitempty"`
-	ContentIndex *int                           `json:"content_index,omitempty"`
-	SummaryIndex *int                           `json:"summary_index,omitempty"`
-	ItemID       string                         `json:"item_id,omitempty"`
-	Part         *ResponsesReasoningSummaryPart `json:"part,omitempty"`
+	OutputIndex    *int                           `json:"output_index,omitempty"`
+	ContentIndex   *int                           `json:"content_index,omitempty"`
+	SummaryIndex   *int                           `json:"summary_index,omitempty"`
+	ItemID         string                         `json:"item_id,omitempty"`
+	Part           *ResponsesReasoningSummaryPart `json:"part,omitempty"`
+	SequenceNumber int                            `json:"sequence_number,omitempty"`
 }
 
 // GetOpenAIError 从动态错误类型中提取OpenAIError结构

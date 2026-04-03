@@ -78,6 +78,9 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	sawError := false
+	streamErrorCode := ""
+	streamErrorMessage := ""
 
 	helper.StreamScannerHandler(c, resp, info, func(data string) bool {
 
@@ -87,6 +90,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sendResponsesStreamData(c, streamResponse, data)
 			switch streamResponse.Type {
 			case "response.completed":
+				info.StreamCompleted = true
 				if streamResponse.Response != nil {
 					if streamResponse.Response.Usage != nil {
 						if streamResponse.Response.Usage.InputTokens != 0 {
@@ -108,6 +112,10 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 						c.Set("image_generation_call_size", streamResponse.Response.GetSize())
 					}
 				}
+			case "error":
+				sawError = true
+				streamErrorCode = strings.TrimSpace(streamResponse.Code)
+				streamErrorMessage = strings.TrimSpace(streamResponse.Message)
 			case "response.output_text.delta":
 				// 处理输出文本
 				responseTextBuilder.WriteString(streamResponse.Delta)
@@ -130,6 +138,44 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return true
 	})
 
+	if info.StreamClientCanceled || c.Request.Context().Err() != nil {
+		info.StreamClientCanceled = true
+		if info.StreamErrorCode == "" {
+			info.StreamErrorCode = "client_disconnected"
+		}
+		if err := c.Request.Context().Err(); err != nil && info.StreamErrorMessage == "" {
+			info.StreamErrorMessage = err.Error()
+		}
+		return &dto.Usage{}, nil
+	}
+
+	if !info.StreamCompleted {
+		if streamErrorCode == "" {
+			streamErrorCode = "stream_incomplete"
+		}
+		if streamErrorMessage == "" {
+			switch {
+			case info.StreamScannerError != "":
+				streamErrorMessage = info.StreamScannerError
+			case sawError:
+				streamErrorMessage = "upstream returned a terminal error chunk before response.completed"
+			default:
+				streamErrorMessage = "stream closed before response.completed"
+			}
+		}
+		info.StreamIncomplete = true
+		info.StreamErrorCode = streamErrorCode
+		info.StreamErrorMessage = streamErrorMessage
+
+		if info.ReceivedResponseCount == 0 {
+			return nil, newResponsesStreamError(streamErrorCode, streamErrorMessage, http.StatusRequestTimeout)
+		}
+		if !sawError {
+			sendResponsesStreamTerminalError(c, streamErrorCode, streamErrorMessage)
+		}
+		return &dto.Usage{}, nil
+	}
+
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量
 		tempStr := responseTextBuilder.String()
@@ -147,4 +193,41 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 
 	return usage, nil
+}
+
+func sendResponsesStreamTerminalError(c *gin.Context, code string, message string) {
+	payload := dto.ResponsesStreamResponse{
+		Type:           "error",
+		Code:           strings.TrimSpace(code),
+		Message:        strings.TrimSpace(message),
+		SequenceNumber: 0,
+	}
+	if payload.Code == "" {
+		payload.Code = "stream_incomplete"
+	}
+	if payload.Message == "" {
+		payload.Message = "stream closed before response.completed"
+	}
+	data, err := common.Marshal(payload)
+	if err != nil {
+		logger.LogError(c, "failed to marshal responses terminal error payload: "+err.Error())
+		return
+	}
+	sendResponsesStreamData(c, payload, string(data))
+}
+
+func newResponsesStreamError(code string, message string, statusCode int) *types.NewAPIError {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "stream_incomplete"
+	}
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "stream closed before response.completed"
+	}
+	return types.WithOpenAIError(types.OpenAIError{
+		Message: message,
+		Type:    "upstream_error",
+		Code:    code,
+	}, statusCode)
 }

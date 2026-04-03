@@ -410,14 +410,37 @@ func postConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage 
 
 	//var logContent string
 
+	if relayInfo.StreamClientCanceled {
+		quota = 0
+		totalTokens = 0
+		promptTokens = 0
+		completionTokens = 0
+		extraContent = append(extraContent, "客户端已断开连接，流未完成，不扣费")
+		logger.LogInfo(ctx, fmt.Sprintf("stream client disconnected, skip quota settlement, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d",
+			relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota))
+	} else if relayInfo.StreamIncomplete {
+		quota = 0
+		totalTokens = 0
+		promptTokens = 0
+		completionTokens = 0
+		extraContent = append(extraContent, "上游流在 response.completed 前断开，按失败处理，不扣费")
+		if msg := strings.TrimSpace(relayInfo.StreamErrorMessage); msg != "" {
+			extraContent = append(extraContent, "流终止原因: "+msg)
+		}
+		logger.LogError(ctx, fmt.Sprintf("stream incomplete, skip quota settlement, userId %d, channelId %d, tokenId %d, model %s, pre-consumed quota %d, reason %s",
+			relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota, strings.TrimSpace(relayInfo.StreamErrorMessage)))
+	}
+
 	// record all the consume log even if quota is 0
 	if totalTokens == 0 {
 		// in this case, must be some error happened
 		// we cannot just return, because we may have to return the pre-consumed quota
 		quota = 0
-		extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
-		logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, "+
-			"tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota))
+		if !relayInfo.StreamClientCanceled && !relayInfo.StreamIncomplete {
+			extraContent = append(extraContent, "上游没有返回计费信息，无法扣费（可能是上游超时）")
+			logger.LogError(ctx, fmt.Sprintf("total tokens is 0, cannot consume quota, userId %d, channelId %d, "+
+				"tokenId %d, model %s， pre-consumed quota %d", relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, modelName, relayInfo.FinalPreConsumedQuota))
+		}
 	} else {
 		if !ratio.IsZero() && quota == 0 {
 			quota = 1

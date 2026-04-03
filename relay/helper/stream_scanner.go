@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
@@ -220,6 +221,15 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			case <-ctx.Done():
 				return
 			case <-c.Request.Context().Done():
+				if info != nil {
+					info.StreamClientCanceled = true
+					if info.StreamErrorCode == "" {
+						info.StreamErrorCode = "client_disconnected"
+					}
+					if err := c.Request.Context().Err(); err != nil && info.StreamErrorMessage == "" {
+						info.StreamErrorMessage = err.Error()
+					}
+				}
 				return
 			default:
 			}
@@ -251,6 +261,17 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 					return
 				case <-stopChan:
 					return
+				case <-c.Request.Context().Done():
+					if info != nil {
+						info.StreamClientCanceled = true
+						if info.StreamErrorCode == "" {
+							info.StreamErrorCode = "client_disconnected"
+						}
+						if err := c.Request.Context().Err(); err != nil && info.StreamErrorMessage == "" {
+							info.StreamErrorMessage = err.Error()
+						}
+					}
+					return
 				}
 			} else {
 				// done, 处理完成标志，直接退出停止读取剩余数据防止出错
@@ -263,6 +284,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 		if err := scanner.Err(); err != nil {
 			if err != io.EOF {
+				if info != nil {
+					info.StreamScannerError = err.Error()
+				}
 				logger.LogError(c, "scanner error: "+err.Error())
 			}
 		}
@@ -275,9 +299,22 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		logger.LogError(c, "streaming timeout")
 	case <-stopChan:
 		// 正常结束
-		logger.LogInfo(c, "streaming finished")
+		if info != nil && info.RelayMode == relayconstant.RelayModeResponses && !info.StreamCompleted {
+			logger.LogInfo(c, "streaming stopped before response.completed")
+		} else {
+			logger.LogInfo(c, "streaming finished")
+		}
 	case <-c.Request.Context().Done():
 		// 客户端断开连接
+		if info != nil {
+			info.StreamClientCanceled = true
+			if info.StreamErrorCode == "" {
+				info.StreamErrorCode = "client_disconnected"
+			}
+			if err := c.Request.Context().Err(); err != nil && info.StreamErrorMessage == "" {
+				info.StreamErrorMessage = err.Error()
+			}
+		}
 		logger.LogInfo(c, "client disconnected")
 	}
 }

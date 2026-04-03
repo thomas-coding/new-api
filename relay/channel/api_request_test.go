@@ -3,6 +3,7 @@ package channel
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -190,4 +191,79 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+func TestApplyArrouteAffinityHeader_SetsHeaderForCliproxyTargets(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	info := &relaycommon.RelayInfo{
+		UserId: 15,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "http://43.135.179.166:18317",
+		},
+	}
+
+	applyArrouteAffinityHeader(headers, info, "http://43.135.179.166:18317/v1/responses")
+
+	require.Equal(t, "user:15", headers.Get(arrouteAffinityHeader))
+}
+
+func TestApplyArrouteAffinityHeader_SkipsNonCliproxyTargets(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	info := &relaycommon.RelayInfo{
+		UserId: 15,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "https://api.openai.com",
+		},
+	}
+
+	applyArrouteAffinityHeader(headers, info, "https://api.openai.com/v1/responses")
+
+	require.Empty(t, headers.Get(arrouteAffinityHeader))
+}
+
+func TestApplyArrouteAffinityHeader_PreservesExistingHeader(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	headers.Set(arrouteAffinityHeader, "user:existing")
+	info := &relaycommon.RelayInfo{
+		UserId: 15,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "http://43.135.179.166:18317",
+		},
+	}
+
+	applyArrouteAffinityHeader(headers, info, "http://43.135.179.166:18317/v1/responses")
+
+	require.Equal(t, "user:existing", headers.Get(arrouteAffinityHeader))
+}
+
+func TestProcessHeaderOverride_PassthroughSkipsArrouteAffinityHeader(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Request.Header.Set("X-Trace-Id", "trace-123")
+	ctx.Request.Header.Set(arrouteAffinityHeader, "user:spoofed")
+
+	info := &relaycommon.RelayInfo{
+		IsChannelTest: false,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			HeadersOverride: map[string]any{
+				"*": "",
+			},
+		},
+	}
+
+	headers, err := processHeaderOverride(info, ctx)
+	require.NoError(t, err)
+	require.Equal(t, "trace-123", headers["x-trace-id"])
+	_, exists := headers[strings.ToLower(arrouteAffinityHeader)]
+	require.False(t, exists)
 }

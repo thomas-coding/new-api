@@ -109,6 +109,10 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		sentStop    bool
 		sawToolCall bool
 		streamErr   *types.NewAPIError
+		sawError    bool
+		errorCode   string
+		errorMsg    string
+		wroteData   bool
 	)
 
 	toolCallIndexByID := make(map[string]int)
@@ -133,6 +137,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 				return false
 			}
+			wroteData = true
 			return true
 		}
 
@@ -145,6 +150,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
 			return false
 		}
+		wroteData = true
 		return true
 	}
 
@@ -434,6 +440,7 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		case "response.function_call_arguments.done":
 
 		case "response.completed":
+			info.StreamCompleted = true
 			if streamResp.Response != nil {
 				if streamResp.Response.Model != "" {
 					model = streamResp.Response.Model
@@ -484,14 +491,30 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				sentStop = true
 			}
 
-		case "response.error", "response.failed":
+		case "error", "response.error", "response.failed":
+			sawError = true
+			if errorCode == "" {
+				errorCode = strings.TrimSpace(streamResp.Code)
+			}
+			if errorMsg == "" {
+				errorMsg = strings.TrimSpace(streamResp.Message)
+			}
 			if streamResp.Response != nil {
 				if oaiErr := streamResp.Response.GetOpenAIError(); oaiErr != nil && oaiErr.Type != "" {
-					streamErr = types.WithOpenAIError(*oaiErr, http.StatusInternalServerError)
-					return false
+					if errorCode == "" {
+						errorCode = strings.TrimSpace(common.Interface2String(oaiErr.Code))
+					}
+					if errorMsg == "" {
+						errorMsg = strings.TrimSpace(oaiErr.Message)
+					}
 				}
 			}
-			streamErr = types.NewOpenAIError(fmt.Errorf("responses stream error: %s", streamResp.Type), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			if errorCode == "" {
+				errorCode = strings.TrimSpace(streamResp.Type)
+			}
+			if errorMsg == "" {
+				errorMsg = fmt.Sprintf("responses stream error: %s", streamResp.Type)
+			}
 			return false
 
 		default:
@@ -499,6 +522,47 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 		return true
 	})
+
+	if info.StreamClientCanceled || c.Request.Context().Err() != nil {
+		info.StreamClientCanceled = true
+		if info.StreamErrorCode == "" {
+			info.StreamErrorCode = "client_disconnected"
+		}
+		if err := c.Request.Context().Err(); err != nil && info.StreamErrorMessage == "" {
+			info.StreamErrorMessage = err.Error()
+		}
+		return &dto.Usage{}, nil
+	}
+
+	if streamErr != nil && !wroteData {
+		return nil, streamErr
+	}
+
+	if !info.StreamCompleted {
+		if errorCode == "" {
+			errorCode = "stream_incomplete"
+		}
+		if errorMsg == "" {
+			switch {
+			case info.StreamScannerError != "":
+				errorMsg = info.StreamScannerError
+			case streamErr != nil:
+				errorCode = "stream_write_error"
+				errorMsg = streamErr.Error()
+			case sawError:
+				errorMsg = "upstream returned a terminal error chunk before response.completed"
+			default:
+				errorMsg = "stream closed before response.completed"
+			}
+		}
+		info.StreamIncomplete = true
+		info.StreamErrorCode = errorCode
+		info.StreamErrorMessage = errorMsg
+		if !wroteData {
+			return nil, newResponsesStreamError(errorCode, errorMsg, http.StatusRequestTimeout)
+		}
+		return &dto.Usage{}, nil
+	}
 
 	if streamErr != nil {
 		return nil, streamErr
