@@ -162,6 +162,7 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 			"Originator": "Codex CLI",
 			"Session_id": "sess-123",
 			"User-Agent": "codex-cli-test",
+			"Version":    "0.101.0",
 		},
 		ChannelMeta: &relaycommon.ChannelMeta{
 			ParamOverride: mergedOverride,
@@ -179,6 +180,7 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	require.Equal(t, "Codex CLI", info.RuntimeHeadersOverride["originator"])
 	require.Equal(t, "sess-123", info.RuntimeHeadersOverride["session_id"])
 	require.Equal(t, "codex-cli-test", info.RuntimeHeadersOverride["user-agent"])
+	require.Equal(t, "0.101.0", info.RuntimeHeadersOverride["version"])
 
 	_, exists := info.RuntimeHeadersOverride["x-codex-beta-features"]
 	require.False(t, exists)

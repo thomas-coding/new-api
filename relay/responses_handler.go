@@ -10,6 +10,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	appconstant "github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
+	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -19,6 +21,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+const transparentCodexRelayMaxBodyRewriteBytes int64 = 10 << 20
 
 func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
 	info.InitChannelMeta(c)
@@ -71,12 +75,45 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 	adaptor.Init(info)
 	var requestBody io.Reader
-	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
+	transparentCodexRelayBody := relaychannel.ShouldUseTransparentCodexRelayBody(info)
+	passThroughBodyEnabled := model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled
+	if passThroughBodyEnabled || transparentCodexRelayBody {
 		storage, err := common.GetBodyStorage(c)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 		}
-		requestBody = common.ReaderOnly(storage)
+		if transparentCodexRelayBody && !passThroughBodyEnabled {
+			if shouldUseTransparentCodexRelayDirectBody(info) {
+				if err := applyTransparentCodexRelayHeaderOnlyParamOverride(info); err != nil {
+					return newAPIErrorFromParamOverride(err)
+				}
+				requestBody = common.ReaderOnly(storage)
+			} else if shouldBypassTransparentCodexRelayBodyRewrite(storage.Size()) {
+				if err := applyTransparentCodexRelayHeaderOnlyParamOverride(info); err != nil {
+					return newAPIErrorFromParamOverride(err)
+				}
+				requiresDisabledFieldFilter, requiresBodyParamOverride := transparentCodexRelayBodyRewriteRequirements(info)
+				logger.LogWarn(c, fmt.Sprintf(
+					"transparent codex relay bypasses body rewrite reason=large_body size=%d requires_disabled_field_filter=%t requires_body_param_override=%t",
+					storage.Size(),
+					requiresDisabledFieldFilter,
+					requiresBodyParamOverride,
+				))
+				requestBody = common.ReaderOnly(storage)
+			} else {
+				bodyBytes, err := storage.Bytes()
+				if err != nil {
+					return types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
+				}
+				bodyBytes, err = buildTransparentCodexRelayRequestBody(bodyBytes, info)
+				if err != nil {
+					return newAPIErrorFromParamOverride(err)
+				}
+				requestBody = bytes.NewBuffer(bodyBytes)
+			}
+		} else {
+			requestBody = common.ReaderOnly(storage)
+		}
 	} else {
 		convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 		if err != nil {
@@ -158,4 +195,64 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 		postConsumeQuota(c, info, usageDto)
 	}
 	return nil
+}
+
+func shouldUseTransparentCodexRelayDirectBody(info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return true
+	}
+	if relaycommon.ShouldFilterDisabledFields(info.ChannelOtherSettings, false) {
+		return false
+	}
+	return relaycommon.CanApplyParamOverrideWithoutRequestBody(info.ParamOverride)
+}
+
+func shouldBypassTransparentCodexRelayBodyRewrite(bodySize int64) bool {
+	return bodySize > transparentCodexRelayMaxBodyRewriteBytes
+}
+
+func transparentCodexRelayBodyRewriteRequirements(info *relaycommon.RelayInfo) (requiresDisabledFieldFilter, requiresBodyParamOverride bool) {
+	if info == nil {
+		return false, false
+	}
+	requiresDisabledFieldFilter = relaycommon.ShouldFilterDisabledFields(info.ChannelOtherSettings, false)
+	requiresBodyParamOverride = len(info.ParamOverride) > 0 && !relaycommon.CanApplyParamOverrideWithoutRequestBody(info.ParamOverride)
+	return requiresDisabledFieldFilter, requiresBodyParamOverride
+}
+
+func applyTransparentCodexRelayHeaderOnlyParamOverride(info *relaycommon.RelayInfo) error {
+	if info == nil || !relaycommon.CanApplyParamOverrideWithoutRequestBody(info.ParamOverride) {
+		return nil
+	}
+	_, err := relaycommon.ApplyParamOverrideWithRelayInfo([]byte(`{}`), info)
+	return err
+}
+
+func buildTransparentCodexRelayRequestBody(body []byte, info *relaycommon.RelayInfo) ([]byte, error) {
+	if len(body) == 0 {
+		return body, nil
+	}
+
+	channelOtherSettings := dto.ChannelOtherSettings{}
+	if info != nil {
+		channelOtherSettings = info.ChannelOtherSettings
+	}
+	if info == nil || (!relaycommon.ShouldFilterDisabledFields(channelOtherSettings, false) && len(info.ParamOverride) == 0) {
+		return body, nil
+	}
+
+	workingBody := body
+	var err error
+	workingBody, err = relaycommon.RemoveDisabledFields(workingBody, channelOtherSettings, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if info != nil && len(info.ParamOverride) > 0 {
+		workingBody, err = relaycommon.ApplyParamOverrideWithRelayInfo(workingBody, info)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return workingBody, nil
 }

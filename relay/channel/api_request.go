@@ -124,6 +124,9 @@ func shouldSkipPassthroughHeader(name string) bool {
 	if name == "" {
 		return true
 	}
+	if isTransparentCodexSnapshotHeader(name) {
+		return true
+	}
 	lower := strings.ToLower(name)
 	if _, ok := passthroughSkipHeaderNamesLower[lower]; ok {
 		return true
@@ -343,6 +346,9 @@ func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if ShouldAttachTransparentCodexSnapshot(info, fullRequestURL) {
+		applyTransparentCodexSnapshotHeaders(req, c)
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
@@ -377,6 +383,9 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 		return nil, err
 	}
 	applyHeaderOverrideToRequest(req, headerOverride)
+	if ShouldAttachTransparentCodexSnapshot(info, fullRequestURL) {
+		applyTransparentCodexSnapshotHeaders(req, c)
+	}
 	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)

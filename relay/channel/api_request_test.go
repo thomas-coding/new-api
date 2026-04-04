@@ -1,12 +1,16 @@
 package channel
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -266,4 +270,169 @@ func TestProcessHeaderOverride_PassthroughSkipsArrouteAffinityHeader(t *testing.
 	require.Equal(t, "trace-123", headers["x-trace-id"])
 	_, exists := headers[strings.ToLower(arrouteAffinityHeader)]
 	require.False(t, exists)
+}
+
+func TestProcessHeaderOverride_PassthroughSkipsTransparentSnapshotHeaders(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	ctx.Request.Header.Set("X-Trace-Id", "trace-123")
+	ctx.Request.Header.Set(arrouteTransparentClientHeadersHeader, "spoofed")
+	ctx.Request.Header.Set(arrouteTransparentClientQueryHeader, "spoofed")
+	ctx.Request.Header.Set(arrouteTransparentSnapshotStatusHeader, "spoofed")
+
+	info := &relaycommon.RelayInfo{
+		IsChannelTest: false,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			HeadersOverride: map[string]any{
+				"*": "",
+			},
+		},
+	}
+
+	headers, err := processHeaderOverride(info, ctx)
+	require.NoError(t, err)
+	require.Equal(t, "trace-123", headers["x-trace-id"])
+	_, exists := headers[strings.ToLower(arrouteTransparentClientHeadersHeader)]
+	require.False(t, exists)
+	_, exists = headers[strings.ToLower(arrouteTransparentClientQueryHeader)]
+	require.False(t, exists)
+	_, exists = headers[strings.ToLower(arrouteTransparentSnapshotStatusHeader)]
+	require.False(t, exists)
+}
+
+func TestApplyTransparentCodexSnapshotHeaders_UsesAllowlistAndRawQuery(t *testing.T) {
+	t.Parallel()
+
+	originalEnabled := model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled
+	model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = true
+	t.Cleanup(func() {
+		model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = originalEnabled
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses?trace_id=req-1&include=reasoning.encrypted_content", nil)
+	ctx.Request.Header.Set("User-Agent", "codex-cli")
+	ctx.Request.Header.Set("Version", "0.101.0")
+	ctx.Request.Header.Set("Session_id", "sess-123")
+	ctx.Request.Header.Set("Originator", "codex_cli_rs")
+	ctx.Request.Header.Set("Accept-Encoding", "br")
+	ctx.Request.Header.Set("X-Codex-Beta-Features", "beta-1")
+	ctx.Request.Header.Set("X-Test-Keep", "nope")
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18317/v1/responses", nil)
+	info := &relaycommon.RelayInfo{
+		RelayMode: relayconstant.RelayModeResponses,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "http://127.0.0.1:18317",
+		},
+	}
+
+	require.True(t, ShouldAttachTransparentCodexSnapshot(info, req.URL.String()))
+	applyTransparentCodexSnapshotHeaders(req, ctx)
+
+	headersValue := req.Header.Get(arrouteTransparentClientHeadersHeader)
+	require.NotEmpty(t, headersValue)
+	headersJSON, err := base64.RawURLEncoding.DecodeString(headersValue)
+	require.NoError(t, err)
+
+	var snapshotHeaders map[string]string
+	require.NoError(t, json.Unmarshal(headersJSON, &snapshotHeaders))
+	require.Equal(t, "codex-cli", snapshotHeaders["User-Agent"])
+	require.Equal(t, "0.101.0", snapshotHeaders["Version"])
+	require.Equal(t, "sess-123", snapshotHeaders["Session_id"])
+	require.Equal(t, "codex_cli_rs", snapshotHeaders["Originator"])
+	require.Equal(t, "br", snapshotHeaders["Accept-Encoding"])
+	require.Equal(t, "beta-1", snapshotHeaders["X-Codex-Beta-Features"])
+	_, exists := snapshotHeaders["X-Test-Keep"]
+	require.False(t, exists)
+
+	queryValue := req.Header.Get(arrouteTransparentClientQueryHeader)
+	require.NotEmpty(t, queryValue)
+	queryBytes, err := base64.RawURLEncoding.DecodeString(queryValue)
+	require.NoError(t, err)
+	require.Equal(t, "trace_id=req-1&include=reasoning.encrypted_content", string(queryBytes))
+}
+
+func TestApplyTransparentCodexSnapshotHeaders_StripsRedundantInternalHeaders(t *testing.T) {
+	t.Parallel()
+
+	originalEnabled := model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled
+	model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = true
+	t.Cleanup(func() {
+		model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = originalEnabled
+	})
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	ctx.Request.Header.Set("User-Agent", "codex-cli")
+	ctx.Request.Header.Set("Version", "0.101.0")
+	ctx.Request.Header.Set("Session_id", "sess-123")
+	ctx.Request.Header.Set("Originator", "codex_cli_rs")
+	ctx.Request.Header.Set("Accept-Encoding", "br")
+	ctx.Request.Header.Set("X-Codex-Beta-Features", "beta-1")
+	ctx.Request.Header.Set("X-Codex-Turn-Metadata", "turn-meta")
+	ctx.Request.Header.Set("OpenAI-Project", "project-client")
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18317/v1/responses", nil)
+	req.Header.Set("User-Agent", "codex-cli")
+	req.Header.Set("Version", "0.101.0")
+	req.Header.Set("Session_id", "sess-123")
+	req.Header.Set("Originator", "codex_cli_rs")
+	req.Header.Set("Accept-Encoding", "br")
+	req.Header.Set("X-Codex-Beta-Features", "beta-1")
+	req.Header.Set("X-Codex-Turn-Metadata", "turn-meta")
+	req.Header.Set("OpenAI-Project", "project-override")
+
+	applyTransparentCodexSnapshotHeaders(req, ctx)
+
+	require.Equal(t, "codex-cli", req.Header.Get("User-Agent"))
+	require.Equal(t, "0.101.0", req.Header.Get("Version"))
+	require.Equal(t, "sess-123", req.Header.Get("Session_id"))
+	require.Empty(t, req.Header.Get("Originator"))
+	require.Empty(t, req.Header.Get("Accept-Encoding"))
+	require.Empty(t, req.Header.Get("X-Codex-Beta-Features"))
+	require.Empty(t, req.Header.Get("X-Codex-Turn-Metadata"))
+	require.Equal(t, "project-override", req.Header.Get("OpenAI-Project"))
+	require.NotEmpty(t, req.Header.Get(arrouteTransparentClientHeadersHeader))
+}
+
+func TestApplyTransparentCodexSnapshotHeaders_SkipsOversizedHeaderSnapshot(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	ctx.Request.Header.Set("User-Agent", "codex-cli")
+	ctx.Request.Header.Set("X-Codex-Turn-State", strings.Repeat("x", 5000))
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18317/v1/responses", nil)
+	applyTransparentCodexSnapshotHeaders(req, ctx)
+
+	require.Empty(t, req.Header.Get(arrouteTransparentClientHeadersHeader))
+	require.Equal(t, transparentCodexSnapshotStatusHeadersOversize, req.Header.Get(arrouteTransparentSnapshotStatusHeader))
+}
+
+func TestApplyTransparentCodexSnapshotHeaders_SkipsOversizedQuerySnapshot(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses?trace_id="+strings.Repeat("q", 3000), nil)
+	ctx.Request.Header.Set("User-Agent", "codex-cli")
+
+	req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:18317/v1/responses", nil)
+	applyTransparentCodexSnapshotHeaders(req, ctx)
+
+	require.Empty(t, req.Header.Get(arrouteTransparentClientQueryHeader))
+	require.Equal(t, transparentCodexSnapshotStatusQueryOversize, req.Header.Get(arrouteTransparentSnapshotStatusHeader))
 }

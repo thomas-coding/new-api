@@ -38,6 +38,7 @@ var codexCliPassThroughHeaders = []string{
 	"Originator",
 	"Session_id",
 	"User-Agent",
+	"Version",
 	"X-Codex-Beta-Features",
 	"X-Codex-Turn-Metadata",
 }

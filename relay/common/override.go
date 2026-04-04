@@ -169,6 +169,47 @@ func ApplyParamOverrideWithRelayInfo(jsonData []byte, info *RelayInfo) ([]byte, 
 	return result, nil
 }
 
+// CanApplyParamOverrideWithoutRequestBody reports whether the override can be
+// evaluated safely against request headers/context alone, without reading the
+// original JSON request body back into memory.
+func CanApplyParamOverrideWithoutRequestBody(paramOverride map[string]interface{}) bool {
+	if len(paramOverride) == 0 {
+		return true
+	}
+
+	if len(buildLegacyParamOverride(paramOverride)) > 0 {
+		return false
+	}
+
+	operations, ok := tryParseOperations(paramOverride)
+	if !ok {
+		return false
+	}
+
+	for _, op := range operations {
+		if len(op.Conditions) > 0 {
+			return false
+		}
+
+		switch strings.ToLower(strings.TrimSpace(op.Mode)) {
+		case "set_header", "delete_header", "copy_header", "move_header", "pass_headers", "return_error":
+			continue
+		case "sync_fields":
+			fromTarget, err := parseSyncTarget(op.From)
+			if err != nil || fromTarget.kind != "header" {
+				return false
+			}
+			toTarget, err := parseSyncTarget(op.To)
+			if err != nil || toTarget.kind != "header" {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func getParamOverrideMap(info *RelayInfo) map[string]interface{} {
 	if info == nil || info.ChannelMeta == nil {
 		return nil
