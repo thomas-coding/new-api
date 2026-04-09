@@ -14,8 +14,9 @@ type verificationValue struct {
 }
 
 const (
-	EmailVerificationPurpose = "v"
-	PasswordResetPurpose     = "r"
+	EmailVerificationPurpose             = "v"
+	RegistrationEmailVerificationPurpose = "g"
+	PasswordResetPurpose                 = "r"
 )
 
 var verificationMutex sync.Mutex
@@ -72,6 +73,12 @@ func removeExpiredPairs() {
 }
 
 func init() {
+	verificationMutex.Lock()
+	defer verificationMutex.Unlock()
+	verificationMap = make(map[string]verificationValue)
+}
+
+func ResetVerificationStateForTest() {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap = make(map[string]verificationValue)

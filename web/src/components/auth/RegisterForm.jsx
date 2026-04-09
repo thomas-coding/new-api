@@ -114,11 +114,12 @@ const RegisterForm = () => {
 
   const logo = getLogo();
   const systemName = getSystemName();
-
-  let affCode = new URLSearchParams(window.location.search).get('aff');
-  if (affCode) {
-    localStorage.setItem('aff', affCode);
-  }
+  const queryParams = useMemo(
+    () => new URLSearchParams(window.location.search),
+    [],
+  );
+  const affCodeFromQuery = queryParams.get('aff') || '';
+  const inviteCodeFromQuery = queryParams.get('invite') || '';
 
   const status = useMemo(() => {
     if (statusState?.status) return statusState.status;
@@ -144,14 +145,18 @@ const RegisterForm = () => {
 
   const [showEmailVerification, setShowEmailVerification] = useState(false);
   const [showRegistrationCode, setShowRegistrationCode] = useState(false);
+  const [oneTimeInviteEnabled, setOneTimeInviteEnabled] = useState(false);
 
   const refreshRegisterRequirements = async () => {
     try {
       const res = await API.get('/api/status');
       const latestStatus = res?.data?.success ? res.data.data : null;
       if (latestStatus) {
+        const nextOneTimeInviteEnabled = !!latestStatus.password_register_one_time_invite_code_enabled;
+        setOneTimeInviteEnabled(nextOneTimeInviteEnabled);
         setShowRegistrationCode(
-          !!latestStatus.password_register_code_enabled,
+          !!latestStatus.password_register_code_enabled ||
+            nextOneTimeInviteEnabled,
         );
         setShowEmailVerification(!!latestStatus.email_verification);
         localStorage.setItem('status', JSON.stringify(latestStatus));
@@ -162,8 +167,13 @@ const RegisterForm = () => {
   };
 
   useEffect(() => {
+    const nextOneTimeInviteEnabled =
+      !!status?.password_register_one_time_invite_code_enabled;
+    setOneTimeInviteEnabled(nextOneTimeInviteEnabled);
     setShowEmailVerification(!!status?.email_verification);
-    setShowRegistrationCode(!!status?.password_register_code_enabled);
+    setShowRegistrationCode(
+      !!status?.password_register_code_enabled || nextOneTimeInviteEnabled,
+    );
     if (status?.turnstile_check) {
       setTurnstileEnabled(true);
       setTurnstileSiteKey(status.turnstile_site_key);
@@ -173,6 +183,24 @@ const RegisterForm = () => {
     setHasUserAgreement(status?.user_agreement_enabled || false);
     setHasPrivacyPolicy(status?.privacy_policy_enabled || false);
   }, [status]);
+
+  useEffect(() => {
+    if (inviteCodeFromQuery) {
+      setInputs((prev) => ({
+        ...prev,
+        registration_code: prev.registration_code || inviteCodeFromQuery,
+      }));
+    }
+  }, [inviteCodeFromQuery]);
+
+  useEffect(() => {
+    if (!status || Object.keys(status).length === 0) {
+      return;
+    }
+    if (!oneTimeInviteEnabled && affCodeFromQuery) {
+      localStorage.setItem('aff', affCodeFromQuery);
+    }
+  }, [affCodeFromQuery, oneTimeInviteEnabled, status]);
 
   useEffect(() => {
     let countdownInterval = null;
@@ -250,13 +278,23 @@ const RegisterForm = () => {
       }
       setRegisterLoading(true);
       try {
-        if (!affCode) {
-          affCode = localStorage.getItem('aff');
+        const payload = {
+          username: inputs.username,
+          password: inputs.password,
+          email: inputs.email,
+          verification_code: inputs.verification_code,
+          registration_code: inputs.registration_code,
+        };
+        if (!oneTimeInviteEnabled) {
+          const affCode =
+            affCodeFromQuery || localStorage.getItem('aff') || '';
+          if (affCode) {
+            payload.aff_code = affCode;
+          }
         }
-        inputs.aff_code = affCode;
         const res = await API.post(
           `/api/user/register?turnstile=${turnstileToken}`,
-          inputs,
+          payload,
         );
         const { success, message } = res.data;
         if (success) {
@@ -282,8 +320,11 @@ const RegisterForm = () => {
     }
     setVerificationCodeLoading(true);
     try {
-      const res = await API.get(
-        `/api/verification?email=${encodeURIComponent(inputs.email)}&turnstile=${turnstileToken}`,
+      const res = await API.post(
+        `/api/user/register/verification-code?turnstile=${turnstileToken}`,
+        {
+          email: inputs.email,
+        },
       );
       const { success, message } = res.data;
       if (success) {
@@ -626,8 +667,13 @@ const RegisterForm = () => {
                   <Form.Input
                     field='registration_code'
                     label={t('邀请码')}
-                    placeholder={t('请输入邀请码')}
+                    placeholder={
+                      oneTimeInviteEnabled
+                        ? t('请输入一次性邀请码')
+                        : t('请输入邀请码')
+                    }
                     name='registration_code'
+                    value={inputs.registration_code}
                     onChange={(value) =>
                       handleChange('registration_code', value)
                     }

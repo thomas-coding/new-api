@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState, useContext, useRef } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import {
   API,
   showError,
@@ -38,6 +38,31 @@ import InvitationCard from './InvitationCard';
 import TransferModal from './modals/TransferModal';
 import PaymentConfirmModal from './modals/PaymentConfirmModal';
 import TopupHistoryModal from './modals/TopupHistoryModal';
+
+const emptyRegistrationInviteInfo = {
+  code: '',
+  expires_at: 0,
+  used_at: 0,
+  revoked_at: 0,
+  can_invite: false,
+  can_generate: false,
+  is_admin_unlimited: false,
+  invite_level: 0,
+  consumed_amount_usd: 0,
+  next_level: 1,
+  next_level_threshold_usd: 100,
+  amount_to_next_level_usd: 100,
+  used_slots: 0,
+  total_slots: 0,
+  cycle_months: 1,
+  cycle_started_at: 0,
+  cycle_ends_at: 0,
+  next_refresh_at: 0,
+  current_new_user_quota: 0,
+  current_new_user_quota_usd: 0,
+  next_available_at: 0,
+};
+const registrationInviteRefreshIntervalMs = 30000;
 
 const TopUp = () => {
   const { t } = useTranslation();
@@ -79,10 +104,13 @@ const TopUp = () => {
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [payMethods, setPayMethods] = useState([]);
 
-  const affFetchedRef = useRef(false);
-
   // 邀请相关状态
   const [affLink, setAffLink] = useState('');
+  const [registrationInviteInfo, setRegistrationInviteInfo] = useState(
+    emptyRegistrationInviteInfo,
+  );
+  const [registrationInviteLoading, setRegistrationInviteLoading] =
+    useState(false);
   const [openTransfer, setOpenTransfer] = useState(false);
   const [transferAmount, setTransferAmount] = useState(0);
 
@@ -523,6 +551,57 @@ const TopUp = () => {
     }
   };
 
+  const getRegistrationInviteCode = async ({ silent = false } = {}) => {
+    if (!silent) {
+      setRegistrationInviteLoading(true);
+    }
+    try {
+      const res = await API.get('/api/user/registration-invite-code');
+      const { success, message, data } = res.data;
+      if (success) {
+        setRegistrationInviteInfo(data || emptyRegistrationInviteInfo);
+      } else {
+        setRegistrationInviteInfo(emptyRegistrationInviteInfo);
+        if (!silent) {
+          showError(message);
+        }
+      }
+    } catch (error) {
+      setRegistrationInviteInfo(emptyRegistrationInviteInfo);
+      if (!silent) {
+        showError(t('邀请码状态获取失败'));
+      }
+    } finally {
+      if (!silent) {
+        setRegistrationInviteLoading(false);
+      }
+    }
+  };
+
+  const generateRegistrationInviteCode = async () => {
+    setRegistrationInviteLoading(true);
+    try {
+      const res = await API.post('/api/user/registration-invite-code');
+      const { success, message, data } = res.data;
+      if (success) {
+        setRegistrationInviteInfo(data || emptyRegistrationInviteInfo);
+        showSuccess(t('邀请码已生成'));
+      } else {
+        if (data) {
+          setRegistrationInviteInfo({
+            ...emptyRegistrationInviteInfo,
+            ...data,
+          });
+        }
+        showError(message);
+      }
+    } catch (error) {
+      showError(t('邀请码生成失败，请重试'));
+    } finally {
+      setRegistrationInviteLoading(false);
+    }
+  };
+
   // 划转邀请额度
   const transfer = async () => {
     if (transferAmount < getQuotaPerUnit()) {
@@ -548,6 +627,21 @@ const TopUp = () => {
     showSuccess(t('邀请链接已复制到剪切板'));
   };
 
+  const oneTimeInviteEnabled =
+    !!statusState?.status?.password_register_one_time_invite_code_enabled;
+  const currentUserRole = userState?.user?.role ?? 0;
+  const showInviteActions = oneTimeInviteEnabled
+    ? currentUserRole > 0
+    : currentUserRole === 1;
+
+  const handleRegistrationInviteCodeCopy = async () => {
+    if (!registrationInviteInfo.code) {
+      return;
+    }
+    await copy(registrationInviteInfo.code);
+    showSuccess(t('邀请码已复制到剪切板'));
+  };
+
   useEffect(() => {
     // 始终获取最新用户数据，确保余额等统计信息准确
     getUserQuota().then();
@@ -555,10 +649,60 @@ const TopUp = () => {
   }, []);
 
   useEffect(() => {
-    if (affFetchedRef.current) return;
-    affFetchedRef.current = true;
-    getAffLink().then();
-  }, []);
+    const status = statusState?.status;
+    const role = userState?.user?.role;
+    if (!status || role === undefined) {
+      return;
+    }
+
+    const oneTimeInviteEnabled =
+      !!status.password_register_one_time_invite_code_enabled;
+
+    if (oneTimeInviteEnabled) {
+      setAffLink('');
+      if (role > 0) {
+        const refreshRegistrationInviteInfo = () => {
+          getRegistrationInviteCode({ silent: true }).then();
+        };
+        refreshRegistrationInviteInfo();
+
+        const intervalId = window.setInterval(
+          refreshRegistrationInviteInfo,
+          registrationInviteRefreshIntervalMs,
+        );
+        const handleWindowFocus = () => {
+          refreshRegistrationInviteInfo();
+        };
+        const handleVisibilityChange = () => {
+          if (document.visibilityState === 'visible') {
+            refreshRegistrationInviteInfo();
+          }
+        };
+
+        window.addEventListener('focus', handleWindowFocus);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+          window.clearInterval(intervalId);
+          window.removeEventListener('focus', handleWindowFocus);
+          document.removeEventListener(
+            'visibilitychange',
+            handleVisibilityChange,
+          );
+        };
+      } else {
+        setRegistrationInviteInfo(emptyRegistrationInviteInfo);
+      }
+      return;
+    }
+
+    setRegistrationInviteInfo(emptyRegistrationInviteInfo);
+    if (role === 1) {
+      getAffLink().then();
+    } else {
+      setAffLink('');
+    }
+  }, [statusState?.status, userState?.user?.role]);
 
   // 在 statusState 可用时获取充值信息
   useEffect(() => {
@@ -800,8 +944,18 @@ const TopUp = () => {
             userState={userState}
             renderQuota={renderQuota}
             setOpenTransfer={setOpenTransfer}
+            inviteMode={
+              statusState?.status?.password_register_one_time_invite_code_enabled
+                ? 'one_time'
+                : 'legacy_aff'
+            }
+            showInviteActions={showInviteActions}
             affLink={affLink}
             handleAffLinkClick={handleAffLinkClick}
+            registrationInviteInfo={registrationInviteInfo}
+            registrationInviteLoading={registrationInviteLoading}
+            onGenerateRegistrationInviteCode={generateRegistrationInviteCode}
+            onCopyRegistrationInviteCode={handleRegistrationInviteCodeCopy}
           />
         )}
       </div>

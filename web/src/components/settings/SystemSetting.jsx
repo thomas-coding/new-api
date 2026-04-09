@@ -50,6 +50,8 @@ const SystemSetting = () => {
     PasswordLoginEnabled: '',
     PasswordRegisterEnabled: '',
     PasswordRegisterCodeEnabled: '',
+    PasswordRegisterOneTimeInviteCodeEnabled: '',
+    PasswordRegisterOneTimeInviteCodeCycleMonths: 1,
     EmailVerificationEnabled: '',
     GitHubOAuthEnabled: '',
     GitHubClientId: '',
@@ -191,6 +193,7 @@ const SystemSetting = () => {
           case 'PasswordLoginEnabled':
           case 'PasswordRegisterEnabled':
           case 'PasswordRegisterCodeEnabled':
+          case 'PasswordRegisterOneTimeInviteCodeEnabled':
           case 'EmailVerificationEnabled':
           case 'GitHubOAuthEnabled':
           case 'WeChatAuthEnabled':
@@ -224,6 +227,7 @@ const SystemSetting = () => {
             break;
           case 'Price':
           case 'MinTopUp':
+          case 'PasswordRegisterOneTimeInviteCodeCycleMonths':
             item.value = parseFloat(item.value);
             break;
           default:
@@ -383,6 +387,20 @@ const SystemSetting = () => {
       {
         key: 'PasswordRegisterCodes',
         value: JSON.stringify(passwordRegisterCodes),
+      },
+    ]);
+  };
+
+  const submitPasswordRegisterOneTimeInviteSettings = async () => {
+    const cycleMonths = Number(inputs.PasswordRegisterOneTimeInviteCodeCycleMonths);
+    if (!Number.isInteger(cycleMonths) || cycleMonths <= 0) {
+      showError(t('一次性邀请码刷新周期必须是大于 0 的整数月数'));
+      return;
+    }
+    await updateOptions([
+      {
+        key: 'PasswordRegisterOneTimeInviteCodeCycleMonths',
+        value: cycleMonths,
       },
     ]);
   };
@@ -1043,6 +1061,18 @@ const SystemSetting = () => {
                         {t('启用密码注册邀请码')}
                       </Form.Checkbox>
                       <Form.Checkbox
+                        field='PasswordRegisterOneTimeInviteCodeEnabled'
+                        noLabel
+                        onChange={(e) =>
+                          handleCheckboxChange(
+                            'PasswordRegisterOneTimeInviteCodeEnabled',
+                            e,
+                          )
+                        }
+                      >
+                        {t('启用密码注册一次性邀请码')}
+                      </Form.Checkbox>
+                      <Form.Checkbox
                         field='EmailVerificationEnabled'
                         noLabel
                         onChange={(e) =>
@@ -1069,6 +1099,41 @@ const SystemSetting = () => {
                       >
                         {t('允许 Turnstile 用户校验')}
                       </Form.Checkbox>
+                      <Form.InputNumber
+                        field='PasswordRegisterOneTimeInviteCodeCycleMonths'
+                        label={t('邀请名额刷新周期（月）')}
+                        min={1}
+                        step={1}
+                        placeholder={t('例如 1 或 3')}
+                        extraText={t(
+                          '按自然月统一刷新；1 表示每月刷新，3 表示每 3 个月刷新一次（1/4/7/10 月）',
+                        )}
+                      />
+                      <Text type='tertiary' size='small'>
+                        {t(
+                          '被邀请注册新用户的初始额度复用“新用户初始额度”配置；邀请码有效期自动到当前周期结束。',
+                        )}
+                      </Text>
+                      <Button
+                        onClick={submitPasswordRegisterOneTimeInviteSettings}
+                        style={{ marginTop: 10 }}
+                      >
+                        {t('保存一次性邀请码设置')}
+                      </Button>
+                      <Text
+                        type='tertiary'
+                        style={{ display: 'block', marginTop: 12 }}
+                      >
+                        {t(
+                          '开启一次性邀请码后，匿名密码注册只接受这种一次性邀请码；下面的静态邀请码列表仍会保留，但不会用于该注册入口。',
+                        )}
+                      </Text>
+                      <Text
+                        type='tertiary'
+                        style={{ display: 'block', marginTop: 12 }}
+                      >
+                        {t('静态邀请码列表（旧模式保留）')}
+                      </Text>
                       <TagInput
                         value={passwordRegisterCodes}
                         onChange={setPasswordRegisterCodes}

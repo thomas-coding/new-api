@@ -38,6 +38,8 @@ func InitOptionMap() {
 	common.OptionMap["PasswordLoginEnabled"] = strconv.FormatBool(common.PasswordLoginEnabled)
 	common.OptionMap["PasswordRegisterEnabled"] = strconv.FormatBool(common.PasswordRegisterEnabled)
 	common.OptionMap["PasswordRegisterCodeEnabled"] = strconv.FormatBool(common.PasswordRegisterCodeEnabled)
+	common.OptionMap["PasswordRegisterOneTimeInviteCodeEnabled"] = strconv.FormatBool(common.PasswordRegisterOneTimeInviteCodeEnabled)
+	common.OptionMap["PasswordRegisterOneTimeInviteCodeCycleMonths"] = strconv.Itoa(common.PasswordRegisterOneTimeInviteCodeCycleMonths)
 	common.OptionMap["PasswordRegisterCodes"] = "[]"
 	common.OptionMap["EmailVerificationEnabled"] = strconv.FormatBool(common.EmailVerificationEnabled)
 	common.OptionMap["GitHubOAuthEnabled"] = strconv.FormatBool(common.GitHubOAuthEnabled)
@@ -229,6 +231,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.PasswordRegisterEnabled = boolValue
 		case "PasswordRegisterCodeEnabled":
 			common.PasswordRegisterCodeEnabled = boolValue
+		case "PasswordRegisterOneTimeInviteCodeEnabled":
+			common.PasswordRegisterOneTimeInviteCodeEnabled = boolValue
 		case "PasswordLoginEnabled":
 			common.PasswordLoginEnabled = boolValue
 		case "EmailVerificationEnabled":
@@ -314,6 +318,8 @@ func updateOptionMap(key string, value string) (err error) {
 	switch key {
 	case "PasswordRegisterCodes":
 		common.UpdatePasswordRegisterCodes(value)
+	case "PasswordRegisterOneTimeInviteCodeCycleMonths":
+		common.PasswordRegisterOneTimeInviteCodeCycleMonths, _ = strconv.Atoi(value)
 	case "EmailDomainWhitelist":
 		common.EmailDomainWhitelist = strings.Split(value, ",")
 	case "SMTPServer":

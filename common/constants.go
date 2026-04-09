@@ -45,6 +45,8 @@ var MaxRecentItems = 1000
 var PasswordLoginEnabled = true
 var PasswordRegisterEnabled = true
 var PasswordRegisterCodeEnabled = false
+var PasswordRegisterOneTimeInviteCodeEnabled = false
+var PasswordRegisterOneTimeInviteCodeCycleMonths = 1
 var PasswordRegisterCodes []string
 var EmailVerificationEnabled = false
 var GitHubOAuthEnabled = false

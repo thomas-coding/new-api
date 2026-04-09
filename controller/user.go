@@ -16,12 +16,10 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
-
-	"github.com/QuantumNous/new-api/constant"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type LoginRequest struct {
@@ -137,28 +135,65 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserPasswordRegisterDisabled)
 		return
 	}
+
 	var user model.User
 	err := json.NewDecoder(c.Request.Body).Decode(&user)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
+
+	user.Username = strings.TrimSpace(user.Username)
+	user.Email = strings.TrimSpace(user.Email)
+	user.AffCode = strings.TrimSpace(user.AffCode)
+	user.RegistrationCode = strings.TrimSpace(user.RegistrationCode)
+
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailVerificationRequired)
 			return
 		}
-		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.EmailVerificationPurpose) {
+		if !common.VerifyCodeWithKey(user.Email, user.VerificationCode, common.RegistrationEmailVerificationPurpose) {
 			common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
 			return
 		}
 	}
-	if common.PasswordRegisterCodeEnabled {
-		if strings.TrimSpace(user.RegistrationCode) == "" {
+
+	inviterId := 0
+	var inviteCode *model.RegistrationInviteCode
+	if common.PasswordRegisterOneTimeInviteCodeEnabled {
+		if user.RegistrationCode == "" {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeRequired)
+			return
+		}
+		now := common.GetTimestamp()
+		inviteCode, err = model.GetActiveRegistrationInviteCodeByCode(user.RegistrationCode, now)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		if inviteCode == nil {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeInvalid)
+			return
+		}
+		inviter, inviterErr := model.GetEnabledUserByID(inviteCode.InviterId)
+		if inviterErr != nil || inviter == nil {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeInvalid)
+			return
+		}
+		cycleWindow := model.GetRegistrationInviteCycleWindowByTimestamp(now, common.PasswordRegisterOneTimeInviteCodeCycleMonths)
+		if !inviteCode.IsUsableInCycle(now, cycleWindow) {
+			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeInvalid)
+			return
+		}
+		inviterId = inviter.Id
+	} else if common.PasswordRegisterCodeEnabled {
+		if user.RegistrationCode == "" {
 			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeRequired)
 			return
 		}
@@ -166,7 +201,10 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserRegisterCodeInvalid)
 			return
 		}
+		affCode := user.AffCode // this code is the inviter's code, not the user's own code
+		inviterId, _ = model.GetUserIdByAffCode(affCode)
 	}
+
 	exist, err := model.CheckUserExistOrDeleted(user.Username, user.Email)
 	if err != nil {
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -177,73 +215,53 @@ func Register(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserExists)
 		return
 	}
-	affCode := user.AffCode // this code is the inviter's code, not the user's own code
-	inviterId, _ := model.GetUserIdByAffCode(affCode)
+
 	cleanUser := model.User{
 		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.Username,
 		InviterId:   inviterId,
-		Role:        common.RoleCommonUser, // 明确设置角色为普通用户
+		Role:        common.RoleCommonUser,
 	}
 	if common.EmailVerificationEnabled {
 		cleanUser.Email = user.Email
 	}
-	if err := cleanUser.Insert(inviterId); err != nil {
+
+	consumeAt := common.GetTimestamp()
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := cleanUser.InsertWithTx(tx, inviterId); err != nil {
+			return err
+		}
+		if _, err := model.CreateDefaultTokenForUserTx(tx, cleanUser.Id); err != nil {
+			return err
+		}
+		if inviteCode != nil {
+			if err := model.ConsumeRegistrationInviteCodeTx(tx, inviteCode.Id, cleanUser.Id, consumeAt); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	if _, err := model.CreateDefaultTokenForUser(cleanUser.Id); err != nil {
-		common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
-		common.SysLog("failed to create default token: " + err.Error())
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-	})
-	return
 
-	// 获取插入后的用户ID
-	var insertedUser model.User
-	if err := model.DB.Where("username = ?", cleanUser.Username).First(&insertedUser).Error; err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
-		return
+	if common.EmailVerificationEnabled {
+		common.DeleteKey(user.Email, common.RegistrationEmailVerificationPurpose)
 	}
-	// 生成默认令牌
-	if constant.GenerateDefaultToken {
-		key, err := common.GenerateKey()
-		if err != nil {
-			common.ApiErrorI18n(c, i18n.MsgUserDefaultTokenFailed)
-			common.SysLog("failed to generate token key: " + err.Error())
-			return
-		}
-		// 生成默认令牌
-		token := model.Token{
-			UserId:             insertedUser.Id, // 使用插入后的用户ID
-			Name:               cleanUser.Username + "的初始令牌",
-			Key:                key,
-			CreatedTime:        common.GetTimestamp(),
-			AccessedTime:       common.GetTimestamp(),
-			ExpiredTime:        -1,     // 永不过期
-			RemainQuota:        500000, // 示例额度
-			UnlimitedQuota:     true,
-			ModelLimitsEnabled: false,
-		}
-		if setting.DefaultUseAutoGroup {
-			token.Group = "auto"
-		}
-		if err := token.Insert(); err != nil {
-			common.ApiErrorI18n(c, i18n.MsgCreateDefaultTokenErr)
-			return
-		}
+	finalizeInviterId := inviterId
+	if inviteCode != nil {
+		// One-time registration invites only retain inviter tracing.
+		// They must not trigger legacy invitation rewards or counters.
+		finalizeInviterId = 0
 	}
+	cleanUser.FinalizeUserCreation(finalizeInviterId)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
 	})
-	return
 }
 
 func GetAllUsers(c *gin.Context) {

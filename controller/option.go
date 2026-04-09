@@ -3,6 +3,7 @@ package controller
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -178,6 +179,15 @@ func UpdateOption(c *gin.Context) {
 				"message": "无法启用 Turnstile 校验，请先填入 Turnstile 校验相关配置信息！",
 			})
 
+			return
+		}
+	case "PasswordRegisterOneTimeInviteCodeCycleMonths":
+		cycleMonths, convErr := strconv.Atoi(option.Value.(string))
+		if convErr != nil || cycleMonths <= 0 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "一次性邀请码刷新周期必须是大于 0 的整数月数",
+			})
 			return
 		}
 	case "TelegramOAuthEnabled":
