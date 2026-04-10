@@ -35,6 +35,7 @@ import Channel from './pages/Channel';
 import Token from './pages/Token';
 import Redemption from './pages/Redemption';
 import TopUp from './pages/TopUp';
+import Lottery from './pages/Lottery';
 import Log from './pages/Log';
 import Chat from './pages/Chat';
 import Chat2Link from './pages/Chat2Link';
@@ -50,6 +51,7 @@ import OAuth2Callback from './components/auth/OAuth2Callback';
 import PersonalSetting from './components/settings/PersonalSetting';
 import Setup from './pages/Setup';
 import SetupCheck from './components/layout/SetupCheck';
+import { mergeAdminConfig } from './hooks/common/useSidebar';
 
 const Home = lazy(() => import('./pages/Home'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -87,6 +89,21 @@ function App() {
     }
     return false; // 默认不需要登录
   }, [statusState?.status?.HeaderNavModules]);
+
+  const lotteryRouteEnabled = useMemo(() => {
+    let config = mergeAdminConfig(null);
+    const sidebarConfig = statusState?.status?.SidebarModulesAdmin;
+    if (sidebarConfig) {
+      try {
+        config = mergeAdminConfig(JSON.parse(sidebarConfig));
+      } catch (error) {
+        config = mergeAdminConfig(null);
+      }
+    }
+    return (
+      config?.personal?.enabled !== false && config?.personal?.lottery !== false
+    );
+  }, [statusState?.status?.SidebarModulesAdmin]);
 
   return (
     <SetupCheck>
@@ -282,6 +299,16 @@ function App() {
             <PrivateRoute>
               <Suspense fallback={<Loading></Loading>} key={location.pathname}>
                 <TopUp />
+              </Suspense>
+            </PrivateRoute>
+          }
+        />
+        <Route
+          path='/console/lottery'
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<Loading></Loading>} key={location.pathname}>
+                {lotteryRouteEnabled ? <Lottery /> : <Forbidden />}
               </Suspense>
             </PrivateRoute>
           }

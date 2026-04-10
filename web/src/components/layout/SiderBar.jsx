@@ -37,6 +37,7 @@ const routerMap = {
   redemption: '/console/redemption',
   batch: '/console/batch-tools',
   topup: '/console/topup',
+  lottery: '/console/lottery',
   user: '/console/user',
   subscription: '/console/subscription',
   log: '/console/log',
@@ -129,6 +130,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('钱包管理'),
         itemKey: 'topup',
         to: '/topup',
+      },
+      {
+        text: t('大乐透'),
+        itemKey: 'lottery',
+        to: '/lottery',
       },
       {
         text: t('个人设置'),

@@ -162,6 +162,23 @@ func SetApiRouter(router *gin.Engine) {
 			subscriptionAdminRoute.DELETE("/user_subscriptions/:id", controller.AdminDeleteUserSubscription)
 		}
 
+		lotteryRoute := apiRouter.Group("/lottery")
+		lotteryRoute.Use(middleware.UserAuth())
+		{
+			lotteryRoute.GET("/self/state", controller.GetLotterySelfState)
+			lotteryRoute.POST("/self/draw", controller.DrawLotteryReward)
+			lotteryRoute.POST("/self/activate", controller.ActivateLotteryRewards)
+			lotteryRoute.POST("/self/gift", controller.GiftLotteryReward)
+		}
+
+		lotteryAdminRoute := apiRouter.Group("/lottery/admin")
+		lotteryAdminRoute.Use(middleware.AdminAuth())
+		{
+			lotteryAdminRoute.GET("/active", controller.GetLotteryAdminActive)
+			lotteryAdminRoute.POST("/open/public", controller.AdminOpenPublicLotteryActivity)
+			lotteryAdminRoute.POST("/open/test", controller.AdminOpenAdminTestLotteryActivity)
+		}
+
 		// Subscription payment callbacks (no auth)
 		apiRouter.POST("/subscription/epay/notify", controller.SubscriptionEpayNotify)
 		apiRouter.GET("/subscription/epay/notify", controller.SubscriptionEpayNotify)

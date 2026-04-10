@@ -27,6 +27,7 @@ import SettingsLog from '../../pages/Setting/Operation/SettingsLog';
 import SettingsMonitoring from '../../pages/Setting/Operation/SettingsMonitoring';
 import SettingsCreditLimit from '../../pages/Setting/Operation/SettingsCreditLimit';
 import SettingsCheckin from '../../pages/Setting/Operation/SettingsCheckin';
+import SettingsLottery from '../../pages/Setting/Operation/SettingsLottery';
 import { API, showError, toBoolean } from '../../helpers';
 
 const OperationSetting = () => {
@@ -83,6 +84,12 @@ const OperationSetting = () => {
 
     /* 令牌设置 */
     'token_setting.max_user_tokens': 1000,
+
+    /* 大乐透设置 */
+    'lottery_setting.weekly_day': 0,
+    'lottery_setting.myth_broadcast_enabled': true,
+    'lottery_setting.tiers':
+      '[{"name":"普通","amount":3,"probability":82},{"name":"稀有","amount":8,"probability":13},{"name":"史诗","amount":20,"probability":4},{"name":"传说","amount":50,"probability":0.8},{"name":"神话","amount":200,"probability":0.2}]',
   });
 
   let [loading, setLoading] = useState(false);
@@ -155,6 +162,10 @@ const OperationSetting = () => {
         {/* 签到设置 */}
         <Card style={{ marginTop: '10px' }}>
           <SettingsCheckin options={inputs} refresh={onRefresh} />
+        </Card>
+        {/* 大乐透设置 */}
+        <Card style={{ marginTop: '10px' }}>
+          <SettingsLottery options={inputs} refresh={onRefresh} />
         </Card>
       </Spin>
     </>

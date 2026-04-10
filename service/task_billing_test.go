@@ -42,8 +42,12 @@ func TestMain(m *testing.M) {
 		&model.Token{},
 		&model.Log{},
 		&model.Channel{},
+		&model.LotteryActivity{},
+		&model.LotteryReward{},
+		&model.LotteryConsumeRecord{},
 		&model.UserSubscription{},
 		&model.SubscriptionPlan{},
+		&model.SubscriptionPreConsumeRecord{},
 		&model.Redemption{},
 		&model.AdminBatchJob{},
 		&model.AdminBatchJobItem{},
@@ -66,8 +70,12 @@ func truncate(t *testing.T) {
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
 		model.DB.Exec("DELETE FROM channels")
+		model.DB.Exec("DELETE FROM lottery_consume_records")
+		model.DB.Exec("DELETE FROM lottery_rewards")
+		model.DB.Exec("DELETE FROM lottery_activities")
 		model.DB.Exec("DELETE FROM user_subscriptions")
 		model.DB.Exec("DELETE FROM subscription_plans")
+		model.DB.Exec("DELETE FROM subscription_pre_consume_records")
 		model.DB.Exec("DELETE FROM redemptions")
 		model.DB.Exec("DELETE FROM admin_batch_job_items")
 		model.DB.Exec("DELETE FROM admin_batch_jobs")
