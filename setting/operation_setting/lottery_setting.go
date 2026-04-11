@@ -1,6 +1,14 @@
 package operation_setting
 
-import "github.com/QuantumNous/new-api/setting/config"
+import (
+	"fmt"
+	"hash/fnv"
+	"time"
+
+	"github.com/QuantumNous/new-api/setting/config"
+)
+
+const LotteryWeeklyDayRandomWorkday = 8
 
 type LotteryTierSetting struct {
 	Name        string  `json:"name"`
@@ -42,10 +50,30 @@ func GetNormalizedLotterySetting() LotterySetting {
 }
 
 func normalizeLotteryWeeklyDay(day int) int {
-	if day < 0 || day > 7 {
+	if day < 0 || day > LotteryWeeklyDayRandomWorkday {
 		return 0
 	}
 	return day
+}
+
+func ResolveLotteryWeeklyDay(day int, now int64) int {
+	normalized := normalizeLotteryWeeklyDay(day)
+	if normalized != LotteryWeeklyDayRandomWorkday {
+		return normalized
+	}
+	return resolveLotteryRandomWorkday(now)
+}
+
+func resolveLotteryRandomWorkday(now int64) int {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	localNow := time.Unix(now, 0).In(time.Local)
+	isoYear, isoWeek := localNow.ISOWeek()
+
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(fmt.Sprintf("%04d-W%02d", isoYear, isoWeek)))
+	return int(hasher.Sum32()%5) + 1
 }
 
 func normalizeLotteryTiers(tiers []LotteryTierSetting) []LotteryTierSetting {

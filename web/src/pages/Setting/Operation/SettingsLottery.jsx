@@ -78,6 +78,7 @@ export default function SettingsLottery(props) {
     ...createInputsFromTiers(DEFAULT_TIERS),
   });
   const [inputsRow, setInputsRow] = useState(inputs);
+  const [effectiveWeeklyDay, setEffectiveWeeklyDay] = useState(0);
 
   const weeklyDayOptions = useMemo(
     () => [
@@ -89,9 +90,20 @@ export default function SettingsLottery(props) {
       { label: t('周五'), value: 5 },
       { label: t('周六'), value: 6 },
       { label: t('周日'), value: 7 },
+      { label: t('周一到周五随机一天'), value: 8 },
     ],
     [t],
   );
+
+  const effectiveWeeklyDayLabel = useMemo(() => {
+    if (Number(effectiveWeeklyDay) <= 0) {
+      return t('未定');
+    }
+    const matched = weeklyDayOptions.find(
+      (option) => Number(option.value) === Number(effectiveWeeklyDay),
+    );
+    return matched?.label || t('未定');
+  }, [effectiveWeeklyDay, t, weeklyDayOptions]);
 
   const totalProbability = useMemo(
     () =>
@@ -179,13 +191,24 @@ export default function SettingsLottery(props) {
           );
         }
       }
-      showSuccess(t('保存成功'));
+      showSuccess(t('保存成功；若当前已有进行中的活动，新奖池会从下一场生效'));
       await props.refresh();
     } catch (error) {
       showError(error?.message || t('保存失败，当前值已刷新，请确认后重试'));
       await props.refresh();
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadLotteryAdminState() {
+    try {
+      const res = await API.get('/api/lottery/admin/active');
+      if (res.data?.success) {
+        setEffectiveWeeklyDay(Number(res.data.data?.effective_weekly_day) || 0);
+      }
+    } catch (error) {
+      setEffectiveWeeklyDay(0);
     }
   }
 
@@ -214,6 +237,10 @@ export default function SettingsLottery(props) {
     refForm.current?.setValues(currentInputs);
   }, [props.options]);
 
+  useEffect(() => {
+    loadLotteryAdminState();
+  }, [props.options]);
+
   return (
     <Spin spinning={loading}>
       <Form
@@ -227,7 +254,7 @@ export default function SettingsLottery(props) {
             style={{ marginBottom: 16, display: 'block' }}
           >
             {t(
-              '公开场按设定周几懒触发开启；管理员也可随时在活动页立即开启公开场或管理员测试场。保存时会按顺序提交并在失败后自动回刷当前值。',
+              '公开场按设定周几懒触发开启；也支持每周在周一到周五之间随机一天开场，且同一周内结果固定。管理员也可随时在活动页立即开启公开场或管理员测试场。已开启活动会沿用开启时的奖池快照，新的金额和概率从下一场生效。保存时会按顺序提交并在失败后自动回刷当前值。',
             )}
           </Typography.Text>
 
@@ -239,6 +266,15 @@ export default function SettingsLottery(props) {
                 optionList={weeklyDayOptions}
                 onChange={handleFieldChange('lottery_setting.weekly_day')}
               />
+              {Number(inputs['lottery_setting.weekly_day']) === 8 ? (
+                <Typography.Text
+                  type='tertiary'
+                  size='small'
+                  style={{ display: 'block', marginTop: 8 }}
+                >
+                  {t('本周实际随机开场日')}：{effectiveWeeklyDayLabel}
+                </Typography.Text>
+              ) : null}
             </Col>
             <Col xs={24} sm={12} md={8} lg={8} xl={8}>
               <Form.Switch

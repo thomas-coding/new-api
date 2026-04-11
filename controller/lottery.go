@@ -280,6 +280,7 @@ func buildLotterySelfStatePayload(user *model.User) (gin.H, error) {
 		"admin_override":            adminOverride,
 		"consumed_amount_usd":       consumedAmountUSD,
 		"weekly_day":                setting.WeeklyDay,
+		"effective_weekly_day":      operation_setting.ResolveLotteryWeeklyDay(setting.WeeklyDay, now),
 		"myth_broadcast_enabled":    setting.MythBroadcastEnabled,
 		"reward_pool":               buildLotteryRewardPool(activity, setting),
 		"activity":                  activityResp,
@@ -451,6 +452,7 @@ func GetLotteryAdminActive(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"activity":               activityResp,
 		"weekly_day":             setting.WeeklyDay,
+		"effective_weekly_day":   operation_setting.ResolveLotteryWeeklyDay(setting.WeeklyDay, now),
 		"myth_broadcast_enabled": setting.MythBroadcastEnabled,
 		"reward_pool":            buildLotteryRewardPool(activity, setting),
 	})

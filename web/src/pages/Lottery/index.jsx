@@ -475,6 +475,14 @@ const Lottery = () => {
                     </div>
                   )}
 
+                  {activity ? (
+                    <div className='mt-4 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700'>
+                      {t(
+                        '当前卡面展示的是本场已锁定奖池。若你刚修改了大乐透设置，新金额和概率会从下一场活动起生效。',
+                      )}
+                    </div>
+                  ) : null}
+
                   <div className='mt-4 flex flex-wrap gap-3'>
                     {summary.activatable_count > 0 ? (
                       <Button
@@ -506,6 +514,17 @@ const Lottery = () => {
                       </>
                     ) : null}
                   </div>
+                </div>
+
+                <div className='flex flex-wrap items-center justify-between gap-3 px-1'>
+                  <Typography.Text strong>
+                    {activity ? t('本场奖池') : t('默认奖池')}
+                  </Typography.Text>
+                  <Typography.Text type='tertiary' size='small'>
+                    {activity
+                      ? t('当前活动使用开启时的奖池快照')
+                      : t('当前显示的是系统设置中的默认奖池')}
+                  </Typography.Text>
                 </div>
 
                 <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'>

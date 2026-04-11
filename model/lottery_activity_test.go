@@ -188,6 +188,40 @@ func TestEnsureWeeklyPublicLotteryActivitySkipsWhenOtherActivityActive(t *testin
 	}
 }
 
+func TestEnsureWeeklyPublicLotteryActivityRandomWorkdayUsesStableWeeklyChoice(t *testing.T) {
+	setupLotteryTestDB(t)
+
+	weekStart := time.Date(2026, 4, 13, 10, 0, 0, 0, time.Local) // Monday
+	setLotteryTestSetting(t, operation_setting.LotteryWeeklyDayRandomWorkday)
+
+	resolvedWeekday := operation_setting.ResolveLotteryWeeklyDay(operation_setting.LotteryWeeklyDayRandomWorkday, weekStart.Unix())
+	if resolvedWeekday < 1 || resolvedWeekday > 5 {
+		t.Fatalf("expected random workday in [1,5], got %d", resolvedWeekday)
+	}
+
+	otherDayOffset := 0
+	if resolvedWeekday == 1 {
+		otherDayOffset = 1
+	}
+	otherTime := weekStart.AddDate(0, 0, otherDayOffset)
+	second, err := EnsureWeeklyPublicLotteryActivity(otherTime.Unix())
+	if err != nil {
+		t.Fatalf("expected non-target workday ensure success, got err=%v", err)
+	}
+	if second != nil {
+		t.Fatalf("expected no weekly activity on non-target workday, got %#v", second)
+	}
+
+	targetTime := weekStart.AddDate(0, 0, resolvedWeekday-1)
+	activity, err := EnsureWeeklyPublicLotteryActivity(targetTime.Unix())
+	if err != nil {
+		t.Fatalf("expected random workday weekly auto open success, got err=%v", err)
+	}
+	if activity == nil {
+		t.Fatal("expected weekly activity to be created on resolved random workday")
+	}
+}
+
 func TestGetCurrentLotteryActivityForRoleRespectsAdminOnlyVisibility(t *testing.T) {
 	setupLotteryTestDB(t)
 

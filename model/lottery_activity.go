@@ -271,7 +271,8 @@ func EnsureWeeklyPublicLotteryActivity(now int64) (*LotteryActivity, error) {
 	}
 
 	_, drawDate, weekday := getLotteryLocalDateInfo(now)
-	if weekday != setting.WeeklyDay {
+	targetWeekday := operation_setting.ResolveLotteryWeeklyDay(setting.WeeklyDay, now)
+	if weekday != targetWeekday {
 		return nil, nil
 	}
 
