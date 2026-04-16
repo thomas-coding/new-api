@@ -35,6 +35,80 @@ func seedLotteryActivatedReward(t *testing.T, activityId int, userId int, amount
 	return reward
 }
 
+func seedLotteryPendingAutoActivateReward(t *testing.T, activityId int, userId int, amountUSD int, now int64) *model.LotteryReward {
+	t.Helper()
+	reward := &model.LotteryReward{
+		ActivityId:      activityId,
+		OwnerUserId:     userId,
+		SourceUserId:    userId,
+		SourceDrawIndex: 1,
+		TierName:        "普通",
+		Amount:          amountUSD,
+		QuotaTotal:      model.GetLotteryQuotaAmountByUSD(amountUSD),
+		QuotaRemaining:  model.GetLotteryQuotaAmountByUSD(amountUSD),
+		Status:          model.LotteryRewardStatusPendingActivation,
+		AutoActivateAt:  now - 60,
+		ConsumeStartsAt: now - 60,
+		ExpiresAt:       now + 3600,
+	}
+	require.NoError(t, model.DB.Create(reward).Error)
+	return reward
+}
+
+func TestBillingSession_AutoActivatesPendingLotteryRewardBeforeWalletBilling(t *testing.T) {
+	truncate(t)
+
+	const userID, tokenID = 43, 43
+	initUserQuota := 0
+	tokenRemain := int(100 * common.QuotaPerUnit)
+	preConsumeQuota := int(20 * common.QuotaPerUnit)
+	actualQuota := int(12 * common.QuotaPerUnit)
+	now := time.Now().Unix()
+
+	seedUser(t, userID, initUserQuota)
+	seedToken(t, tokenID, userID, "sk-lottery-wallet-pending", tokenRemain)
+	reward := seedLotteryPendingAutoActivateReward(t, 1, userID, 50, now)
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	relayInfo := &relaycommon.RelayInfo{
+		RequestId:       "billing-lottery-wallet-pending-1",
+		UserId:          userID,
+		TokenId:         tokenID,
+		TokenKey:        "sk-lottery-wallet-pending",
+		TokenUnlimited:  false,
+		OriginModelName: "gpt-5.4",
+		IsPlayground:    true,
+		ForcePreConsume: false,
+		UserSetting: dto.UserSetting{
+			BillingPreference: "wallet_only",
+		},
+	}
+
+	session, apiErr := NewBillingSession(ctx, relayInfo, preConsumeQuota)
+	require.Nil(t, apiErr)
+	require.NotNil(t, session)
+
+	require.NoError(t, model.DB.First(&reward, reward.Id).Error)
+	assert.Equal(t, model.LotteryRewardStatusActivated, reward.Status)
+	assert.Equal(t, now-60, reward.ActivatedAt)
+	assert.Equal(t, model.GetLotteryQuotaAmountByUSD(30), reward.QuotaRemaining)
+	assert.Equal(t, initUserQuota, getUserQuota(t, userID))
+	assert.Equal(t, model.GetLotteryQuotaAmountByUSD(20), relayInfo.LotteryPreConsumedQuota)
+	assert.Equal(t, 0, relayInfo.FundingPreConsumedQuota)
+
+	require.NoError(t, session.Settle(actualQuota))
+
+	require.NoError(t, model.DB.First(&reward, reward.Id).Error)
+	assert.Equal(t, model.LotteryRewardStatusActivated, reward.Status)
+	assert.Equal(t, model.GetLotteryQuotaAmountByUSD(38), reward.QuotaRemaining)
+	assert.Equal(t, actualQuota, relayInfo.LotteryConsumedQuota)
+	assert.Equal(t, model.GetLotteryQuotaAmountByUSD(8), relayInfo.LotteryRefundedQuota)
+	assert.Equal(t, 0, relayInfo.FundingActualQuota)
+}
+
 func TestBillingSession_UsesLotteryQuotaBeforeWallet(t *testing.T) {
 	truncate(t)
 

@@ -181,37 +181,44 @@ func ReconcileLotteryRuntimeState(now int64) error {
 		now = GetDBTimestamp()
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&LotteryReward{}).
-			Where("status = ? AND auto_activate_at <= ? AND expires_at > ?", LotteryRewardStatusPendingActivation, now, now).
-			Updates(map[string]any{
-				"status":       LotteryRewardStatusActivated,
-				"activated_at": gorm.Expr("auto_activate_at"),
-				"updated_at":   now,
-			}).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Model(&LotteryReward{}).
-			Where("status IN ? AND expires_at <= ?", []string{LotteryRewardStatusPendingActivation, LotteryRewardStatusActivated}, now).
-			Updates(map[string]any{
-				"status":     LotteryRewardStatusExpired,
-				"expired_at": now,
-				"updated_at": now,
-			}).Error; err != nil {
-			return err
-		}
-
-		if err := tx.Model(&LotteryActivity{}).
-			Where("status = ? AND expires_at <= ?", LotteryActivityStatusActive, now).
-			Updates(map[string]any{
-				"status":     LotteryActivityStatusClosed,
-				"closed_at":  now,
-				"updated_at": now,
-			}).Error; err != nil {
-			return err
-		}
-		return nil
+		return reconcileLotteryRuntimeStateTx(tx, now)
 	})
+}
+
+func reconcileLotteryRuntimeStateTx(tx *gorm.DB, now int64) error {
+	if tx == nil {
+		return nil
+	}
+	if err := tx.Model(&LotteryReward{}).
+		Where("status = ? AND auto_activate_at <= ? AND expires_at > ?", LotteryRewardStatusPendingActivation, now, now).
+		Updates(map[string]any{
+			"status":       LotteryRewardStatusActivated,
+			"activated_at": gorm.Expr("auto_activate_at"),
+			"updated_at":   now,
+		}).Error; err != nil {
+		return err
+	}
+
+	if err := tx.Model(&LotteryReward{}).
+		Where("status IN ? AND expires_at <= ?", []string{LotteryRewardStatusPendingActivation, LotteryRewardStatusActivated}, now).
+		Updates(map[string]any{
+			"status":     LotteryRewardStatusExpired,
+			"expired_at": now,
+			"updated_at": now,
+		}).Error; err != nil {
+		return err
+	}
+
+	if err := tx.Model(&LotteryActivity{}).
+		Where("status = ? AND expires_at <= ?", LotteryActivityStatusActive, now).
+		Updates(map[string]any{
+			"status":     LotteryActivityStatusClosed,
+			"closed_at":  now,
+			"updated_at": now,
+		}).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func DrawLotteryRewardForUser(user *User, activity *LotteryActivity, now int64) (*LotteryReward, int, error) {

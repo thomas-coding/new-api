@@ -64,6 +64,12 @@ func GetAvailableLotteryQuotaForUser(userId int, now int64) (int, error) {
 	if userId <= 0 {
 		return 0, nil
 	}
+	if now <= 0 {
+		now = GetDBTimestamp()
+	}
+	if err := ReconcileLotteryRuntimeState(now); err != nil {
+		return 0, err
+	}
 	var rewards []LotteryReward
 	if err := DB.Model(&LotteryReward{}).
 		Where("owner_user_id = ? AND status = ? AND consume_starts_at <= ? AND expires_at > ? AND quota_remaining > ?", userId, LotteryRewardStatusActivated, now, now, 0).
@@ -82,9 +88,16 @@ func PreConsumeLotteryQuota(requestId string, userId int, amount int, now int64)
 	if requestId == "" || userId <= 0 || amount <= 0 {
 		return 0, nil
 	}
+	if now <= 0 {
+		now = GetDBTimestamp()
+	}
 
 	reservedQuota := 0
 	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := reconcileLotteryRuntimeStateTx(tx, now); err != nil {
+			return err
+		}
+
 		var existing LotteryConsumeRecord
 		err := tx.Where("request_id = ?", requestId).First(&existing).Error
 		if err == nil {
