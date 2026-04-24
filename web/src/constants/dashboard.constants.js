@@ -128,11 +128,14 @@ export const ANNOUNCEMENT_LEGEND_DATA = [
 
 // ========== Uptime 状态映射 ==========
 export const UPTIME_STATUS_MAP = {
-  1: { color: '#10b981', label: '正常', text: '可用率' }, // UP
-  0: { color: '#ef4444', label: '异常', text: '有异常' }, // DOWN
-  2: { color: '#f59e0b', label: '高延迟', text: '高延迟' }, // PENDING
+  1: { color: '#10b981', label: '正常', text: '正常' }, // UP
+  0: { color: '#ef4444', label: '异常', text: '异常' }, // DOWN
+  2: { color: '#f59e0b', label: '待检测', text: '待检测' }, // PENDING
   3: { color: '#3b82f6', label: '维护中', text: '维护中' }, // MAINTENANCE
 };
+
+export const UPTIME_HISTORY_BLOCKS = 50;
+export const UPTIME_HISTORY_PLACEHOLDER_COLOR = '#e5e7eb';
 
 // ========== 本地存储键名 ==========
 export const STORAGE_KEYS = {

@@ -2,13 +2,13 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 
 	"github.com/gin-gonic/gin"
@@ -24,10 +24,11 @@ const (
 )
 
 type Monitor struct {
-	Name   string  `json:"name"`
-	Uptime float64 `json:"uptime"`
-	Status int     `json:"status"`
-	Group  string  `json:"group,omitempty"`
+	Name       string  `json:"name"`
+	Uptime     float64 `json:"uptime"`
+	Status     int     `json:"status"`
+	Group      string  `json:"group,omitempty"`
+	Heartbeats []int   `json:"heartbeats,omitempty"`
 }
 
 type UptimeGroupResult struct {
@@ -51,7 +52,7 @@ func getAndDecode(ctx context.Context, client *http.Client, url string, dest int
 		return errors.New("non-200 status")
 	}
 
-	return json.NewDecoder(resp.Body).Decode(dest)
+	return common.DecodeJson(resp.Body, dest)
 }
 
 func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[string]interface{}) UptimeGroupResult {
@@ -107,8 +108,9 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 
 		for _, m := range pg.MonitorList {
 			monitor := Monitor{
-				Name:  m.Name,
-				Group: pg.Name,
+				Name:   m.Name,
+				Group:  pg.Name,
+				Status: 2,
 			}
 
 			monitorID := strconv.Itoa(m.ID)
@@ -118,7 +120,11 @@ func fetchGroupData(ctx context.Context, client *http.Client, groupConfig map[st
 			}
 
 			if heartbeats, exists := heartbeatData.HeartbeatList[monitorID]; exists && len(heartbeats) > 0 {
-				monitor.Status = heartbeats[0].Status
+				monitor.Heartbeats = make([]int, 0, len(heartbeats))
+				for _, heartbeat := range heartbeats {
+					monitor.Heartbeats = append(monitor.Heartbeats, heartbeat.Status)
+				}
+				monitor.Status = monitor.Heartbeats[len(monitor.Heartbeats)-1]
 			}
 
 			result.Monitors = append(result.Monitors, monitor)

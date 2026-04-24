@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React from 'react';
-import { Progress, Divider, Empty } from '@douyinfe/semi-ui';
+import { Divider, Empty } from '@douyinfe/semi-ui';
 import {
   IllustrationConstruction,
   IllustrationConstructionDark,
@@ -35,6 +35,8 @@ import {
   DEFAULT_TIME_INTERVALS,
   DEFAULTS,
   ILLUSTRATION_SIZE,
+  UPTIME_HISTORY_BLOCKS,
+  UPTIME_HISTORY_PLACEHOLDER_COLOR,
 } from '../constants/dashboard.constants';
 
 // ========== 时间相关工具函数 ==========
@@ -165,7 +167,7 @@ export const getUptimeStatusColor = (status, uptimeStatusMap) =>
   uptimeStatusMap[status]?.color || '#8b9aa7';
 
 export const getUptimeStatusText = (status, uptimeStatusMap, t) =>
-  uptimeStatusMap[status]?.text || t('未知');
+  t(uptimeStatusMap[status]?.text || '未知');
 
 // ========== 监控列表渲染函数 ==========
 export const renderMonitorList = (
@@ -195,33 +197,72 @@ export const renderMonitorList = (
     grouped[g].push(m);
   });
 
+  const normalizeHeartbeatHistory = (heartbeats) => {
+    const values = Array.isArray(heartbeats)
+      ? heartbeats.slice(-UPTIME_HISTORY_BLOCKS)
+      : [];
+    const missingCount = Math.max(0, UPTIME_HISTORY_BLOCKS - values.length);
+    return [
+      ...Array.from({ length: missingCount }, () => null),
+      ...values.map((status) => (Number.isInteger(status) ? status : null)),
+    ];
+  };
+
+  const getStatusBadgeStyle = (status) => {
+    const color = getUptimeStatusColor(status);
+    return {
+      color,
+      backgroundColor: `${color}1A`,
+    };
+  };
+
   const renderItem = (monitor, idx) => (
-    <div key={idx} className='p-2 hover:bg-white rounded-lg transition-colors'>
-      <div className='flex items-center justify-between mb-1'>
-        <div className='flex items-center gap-2'>
+    <div
+      key={idx}
+      className='p-3 hover:bg-white rounded-xl transition-colors border border-gray-100'
+    >
+      <div className='flex items-center justify-between gap-3'>
+        <div className='flex items-center gap-2 min-w-0'>
           <div
-            className='w-2 h-2 rounded-full flex-shrink-0'
+            className='w-2.5 h-2.5 rounded-full flex-shrink-0'
             style={{ backgroundColor: getUptimeStatusColor(monitor.status) }}
           />
-          <span className='text-sm font-medium text-gray-900'>
+          <span className='text-sm font-medium text-gray-900 truncate'>
             {monitor.name}
           </span>
         </div>
-        <span className='text-xs text-gray-500'>
-          {((monitor.uptime || 0) * 100).toFixed(2)}%
-        </span>
-      </div>
-      <div className='flex items-center gap-2'>
-        <span className='text-xs text-gray-500'>
+        <span
+          className='text-xs font-medium px-2 py-1 rounded-full whitespace-nowrap'
+          style={getStatusBadgeStyle(monitor.status)}
+        >
           {getUptimeStatusText(monitor.status)}
         </span>
-        <div className='flex-1'>
-          <Progress
-            percent={(monitor.uptime || 0) * 100}
-            showInfo={false}
-            aria-label={`${monitor.name} uptime`}
-            stroke={getUptimeStatusColor(monitor.status)}
-          />
+      </div>
+
+      <div className='mt-3'>
+        <div
+          className='grid gap-1'
+          style={{
+            gridTemplateColumns: `repeat(${UPTIME_HISTORY_BLOCKS}, minmax(0, 1fr))`,
+          }}
+        >
+          {normalizeHeartbeatHistory(monitor.heartbeats).map((status, index) => (
+            <div
+              key={`${monitor.name}-${index}`}
+              className='h-4 rounded-[3px]'
+              style={{
+                backgroundColor:
+                  status === null
+                    ? UPTIME_HISTORY_PLACEHOLDER_COLOR
+                    : getUptimeStatusColor(status),
+                opacity: status === null ? 0.45 : 1,
+              }}
+            />
+          ))}
+        </div>
+        <div className='mt-2 flex items-center justify-between text-[11px] text-gray-500'>
+          <span>{t('最近50次检测，最新在右')}</span>
+          <span>{`24h ${((monitor.uptime || 0) * 100).toFixed(1)}%`}</span>
         </div>
       </div>
     </div>
