@@ -229,6 +229,73 @@ func RefundLotteryQuotaPreConsume(requestId string, now int64) error {
 	})
 }
 
+func RollbackLotteryQuotaConsumeRecord(requestId string, now int64) error {
+	if requestId == "" {
+		return nil
+	}
+	if now <= 0 {
+		now = GetDBTimestamp()
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		var record LotteryConsumeRecord
+		err := tx.Set("gorm:query_option", "FOR UPDATE").Where("request_id = ?", requestId).First(&record).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if record.Status == LotteryConsumeRecordStatusRefunded {
+			return nil
+		}
+
+		refundQuota := 0
+		switch record.Status {
+		case LotteryConsumeRecordStatusPreConsumed:
+			refundQuota = record.TotalQuota
+		case LotteryConsumeRecordStatusSettled:
+			refundQuota = record.SettledQuota
+		default:
+			return nil
+		}
+
+		if refundQuota > 0 {
+			allocations, err := record.GetAllocations()
+			if err != nil {
+				return err
+			}
+			remainingRefund := refundQuota
+			for i := len(allocations) - 1; i >= 0 && remainingRefund > 0; i-- {
+				refundPart := allocations[i].Quota
+				if refundPart > remainingRefund {
+					refundPart = remainingRefund
+				}
+				if refundPart <= 0 {
+					continue
+				}
+				if err := refundLotteryAllocationTx(tx, allocations[i].RewardId, refundPart, now); err != nil {
+					return err
+				}
+				remainingRefund -= refundPart
+			}
+			if remainingRefund != 0 {
+				return ErrLotteryConsumeConflict
+			}
+		}
+
+		return tx.Model(&LotteryConsumeRecord{}).
+			Where("id = ? AND status = ?", record.Id, record.Status).
+			Updates(map[string]any{
+				"status":         LotteryConsumeRecordStatusRefunded,
+				"settled_quota":  0,
+				"refunded_quota": record.TotalQuota,
+				"settled_at":     0,
+				"refunded_at":    now,
+				"updated_at":     now,
+			}).Error
+	})
+}
+
 func SettleLotteryQuota(requestId string, actualQuota int, now int64) (int, int, error) {
 	if requestId == "" {
 		return 0, 0, nil

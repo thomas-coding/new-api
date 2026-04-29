@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -48,36 +49,40 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		actualQuota = 0
 	}
 
-	lotteryUsed := 0
-	lotteryRefunded := 0
+	plannedLotteryUsed := 0
 	if s.lotteryReserved > 0 {
-		var err error
-		lotteryUsed = actualQuota
-		if lotteryUsed > s.lotteryReserved {
-			lotteryUsed = s.lotteryReserved
-		}
-		lotteryUsed, lotteryRefunded, err = model.SettleLotteryQuota(s.relayInfo.RequestId, lotteryUsed, model.GetDBTimestamp())
-		if err != nil {
-			return err
+		plannedLotteryUsed = actualQuota
+		if plannedLotteryUsed > s.lotteryReserved {
+			plannedLotteryUsed = s.lotteryReserved
 		}
 	}
 
 	basePreConsumed := s.fundingPreUsed
-	baseActual := actualQuota - lotteryUsed
+	baseActual := actualQuota - plannedLotteryUsed
 	if baseActual < 0 {
 		baseActual = 0
 	}
 	delta := baseActual - basePreConsumed
 
+	fundingAdjusted := false
 	// 1) 调整资金来源（仅在尚未提交时执行，防止重复调用）
-	if !s.fundingSettled {
-		if delta != 0 {
-			if err := s.funding.Settle(delta); err != nil {
-				return err
-			}
+	if delta != 0 {
+		if err := s.funding.Settle(delta); err != nil {
+			return s.rollbackAfterSettleFailure(delta, fundingAdjusted, err)
 		}
-		s.fundingSettled = true
+		fundingAdjusted = true
 	}
+
+	lotteryUsed := 0
+	lotteryRefunded := 0
+	if s.lotteryReserved > 0 {
+		var err error
+		lotteryUsed, lotteryRefunded, err = model.SettleLotteryQuota(s.relayInfo.RequestId, plannedLotteryUsed, model.GetDBTimestamp())
+		if err != nil {
+			return s.rollbackAfterSettleFailure(delta, fundingAdjusted, err)
+		}
+	}
+
 	// 2) 调整令牌额度
 	var tokenErr error
 	tokenDelta := actualQuota - s.preConsumedQuota
@@ -87,11 +92,9 @@ func (s *BillingSession) Settle(actualQuota int) error {
 		} else if tokenDelta < 0 {
 			tokenErr = model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, -tokenDelta)
 		}
-		if tokenErr != nil {
-			// 资金来源已提交，令牌调整失败只能记录日志；标记 settled 防止 Refund 误退资金
-			common.SysLog(fmt.Sprintf("error adjusting token quota after funding settled (userId=%d, tokenId=%d, delta=%d): %s",
-				s.relayInfo.UserId, s.relayInfo.TokenId, tokenDelta, tokenErr.Error()))
-		}
+	}
+	if tokenErr != nil {
+		return s.rollbackAfterSettleFailure(delta, fundingAdjusted, tokenErr)
 	}
 	// 3) 更新 relayInfo 上的订阅 PostDelta（用于日志）
 	if s.funding.Source() == BillingSourceSubscription {
@@ -102,8 +105,9 @@ func (s *BillingSession) Settle(actualQuota int) error {
 	s.relayInfo.LotteryRefundedQuota = lotteryRefunded
 	s.relayInfo.FundingPreConsumedQuota = basePreConsumed
 	s.relayInfo.FundingActualQuota = baseActual
+	s.fundingSettled = true
 	s.settled = true
-	return tokenErr
+	return nil
 }
 
 // Refund 退还所有预扣费，幂等安全，异步执行。
@@ -172,6 +176,56 @@ func (s *BillingSession) needsRefundLocked() bool {
 	return false
 }
 
+func (s *BillingSession) rollbackAfterSettleFailure(delta int, fundingAdjusted bool, cause error) error {
+	if cause == nil {
+		return nil
+	}
+
+	now := model.GetDBTimestamp()
+	errMessages := []string{cause.Error()}
+
+	if fundingAdjusted && delta != 0 {
+		if err := s.funding.Settle(-delta); err != nil {
+			errMessages = append(errMessages, "rollback funding delta failed: "+err.Error())
+		}
+	}
+	if s.lotteryReserved > 0 {
+		if err := model.RollbackLotteryQuotaConsumeRecord(s.relayInfo.RequestId, now); err != nil {
+			errMessages = append(errMessages, "rollback lottery quota failed: "+err.Error())
+		}
+	}
+	if err := s.funding.Refund(); err != nil {
+		errMessages = append(errMessages, "refund funding pre-consume failed: "+err.Error())
+	}
+	if s.tokenConsumed > 0 && !s.relayInfo.IsPlayground {
+		if err := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed); err != nil {
+			errMessages = append(errMessages, "refund token pre-consume failed: "+err.Error())
+		}
+	}
+
+	if len(errMessages) == 1 {
+		s.resetAfterFailedSettleRollback()
+	}
+	return errors.New(strings.Join(errMessages, "; "))
+}
+
+func (s *BillingSession) resetAfterFailedSettleRollback() {
+	s.preConsumedQuota = 0
+	s.fundingPreUsed = 0
+	s.tokenConsumed = 0
+	s.lotteryReserved = 0
+	s.fundingSettled = false
+	s.refunded = true
+	if wallet, ok := s.funding.(*WalletFunding); ok {
+		wallet.consumed = 0
+	}
+	if sub, ok := s.funding.(*SubscriptionFunding); ok {
+		sub.preConsumed = 0
+		sub.AmountUsedAfter = 0
+	}
+	s.syncRelayInfo()
+}
+
 // GetPreConsumedQuota 返回实际预扣的额度。
 func (s *BillingSession) GetPreConsumedQuota() int {
 	return s.preConsumedQuota
@@ -181,15 +235,16 @@ func (s *BillingSession) GetPreConsumedQuota() int {
 // PreConsume — 统一预扣费入口（含信任额度旁路）
 // ---------------------------------------------------------------------------
 
-// preConsume 执行预扣费：信任检查 -> 令牌预扣 -> 资金来源预扣。
+// preConsume 执行预扣费：信任检查 -> 令牌预扣 -> 乐透券预占 -> 资金来源预扣。
 // 任一步骤失败时原子回滚已完成的步骤。
 func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIError {
-	effectiveQuota := quota
+	requestQuota := quota
+	effectiveQuota := requestQuota
 
 	// ---- 信任额度旁路 ----
 	if s.shouldTrust(c) {
 		effectiveQuota = 0
-		logger.LogInfo(c, fmt.Sprintf("用户 %d 额度充足, 信任且不需要预扣费 (funding=%s)", s.relayInfo.UserId, s.funding.Source()))
+		logger.LogInfo(c, fmt.Sprintf("用户 %d 额度充足, 信任旁路基础预扣费 (funding=%s)", s.relayInfo.UserId, s.funding.Source()))
 	} else if effectiveQuota > 0 {
 		logger.LogInfo(c, fmt.Sprintf("用户 %d 需要预扣费 %s (funding=%s)", s.relayInfo.UserId, logger.FormatQuota(effectiveQuota), s.funding.Source()))
 	}
@@ -203,8 +258,8 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 	}
 
 	fundingQuota := effectiveQuota
-	if effectiveQuota > 0 && s.canUseLotteryQuota() {
-		lotteryReserved, err := model.PreConsumeLotteryQuota(s.relayInfo.RequestId, s.relayInfo.UserId, effectiveQuota, model.GetDBTimestamp())
+	if requestQuota > 0 && s.canUseLotteryQuota() {
+		lotteryReserved, err := model.PreConsumeLotteryQuota(s.relayInfo.RequestId, s.relayInfo.UserId, requestQuota, model.GetDBTimestamp())
 		if err != nil {
 			if s.tokenConsumed > 0 && !s.relayInfo.IsPlayground {
 				if rollbackErr := model.IncreaseTokenQuota(s.relayInfo.TokenId, s.relayInfo.TokenKey, s.tokenConsumed); rollbackErr != nil {
@@ -221,7 +276,7 @@ func (s *BillingSession) preConsume(c *gin.Context, quota int) *types.NewAPIErro
 			fundingQuota = 0
 		}
 	}
-	if fundingQuota <= 0 && effectiveQuota > 0 && s.funding.Source() == BillingSourceSubscription {
+	if fundingQuota <= 0 && requestQuota > 0 && s.funding.Source() == BillingSourceSubscription {
 		// Keep a tiny subscription pre-consume anchor so later positive deltas can settle on the same subscription.
 		fundingQuota = 1
 	}
@@ -353,7 +408,10 @@ func NewBillingSession(c *gin.Context, relayInfo *relaycommon.RelayInfo, preCons
 		}
 		lotteryQuota := 0
 		if relayInfo.TaskRelayInfo == nil {
-			lotteryQuota, _ = model.GetAvailableLotteryQuotaForUser(relayInfo.UserId, model.GetDBTimestamp())
+			lotteryQuota, err = model.GetAvailableLotteryQuotaForUser(relayInfo.UserId, model.GetDBTimestamp())
+			if err != nil {
+				return nil, types.NewError(err, types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+			}
 		}
 		if userQuota <= 0 && lotteryQuota <= 0 {
 			return nil, types.NewErrorWithStatusCode(
