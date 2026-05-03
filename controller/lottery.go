@@ -58,6 +58,14 @@ type lotteryRewardResponse struct {
 	CanConsume       bool    `json:"can_consume"`
 }
 
+type lotteryRecentWinResponse struct {
+	Id             int    `json:"id"`
+	SourceUsername string `json:"source_username"`
+	TierName       string `json:"tier_name"`
+	Amount         int    `json:"amount"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
 type lotteryRewardSummaryResponse struct {
 	TotalCount         int     `json:"total_count"`
 	TotalAmount        float64 `json:"total_amount"`
@@ -175,6 +183,36 @@ func buildLotteryRewardResponses(rewards []model.LotteryReward, now int64) []lot
 			CanActivate:      reward.CanActivateAt(now),
 			CanGift:          reward.CanGiftAt(now),
 			CanConsume:       reward.CanConsumeAt(now),
+		})
+	}
+	return resp
+}
+
+func buildLotteryRecentWinResponses(rewards []model.LotteryReward) []lotteryRecentWinResponse {
+	usernames := make(map[int]string)
+	for _, reward := range rewards {
+		if reward.SourceUserId <= 0 {
+			continue
+		}
+		if _, ok := usernames[reward.SourceUserId]; ok {
+			continue
+		}
+		username, err := model.GetUsernameById(reward.SourceUserId, false)
+		if err != nil {
+			usernames[reward.SourceUserId] = ""
+			continue
+		}
+		usernames[reward.SourceUserId] = username
+	}
+
+	resp := make([]lotteryRecentWinResponse, 0, len(rewards))
+	for _, reward := range rewards {
+		resp = append(resp, lotteryRecentWinResponse{
+			Id:             reward.Id,
+			SourceUsername: usernames[reward.SourceUserId],
+			TierName:       reward.TierName,
+			Amount:         reward.Amount,
+			CreatedAt:      reward.CreatedAt,
 		})
 	}
 	return resp
@@ -304,6 +342,33 @@ func GetLotterySelfState(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, payload)
+}
+
+func GetLotteryRecentWins(c *gin.Context) {
+	userId := c.GetInt("id")
+	user, err := model.GetUserById(userId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	now := model.GetDBTimestamp()
+	activity, err := model.GetCurrentLotteryActivityForRole(user.Role, now)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if activity == nil || !activity.IsVisibleToRole(user.Role) {
+		common.ApiSuccess(c, []lotteryRecentWinResponse{})
+		return
+	}
+
+	rewards, err := model.ListRecentHighTierLotteryWinsForActivity(activity.Id, 20)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, buildLotteryRecentWinResponses(rewards))
 }
 
 func DrawLotteryReward(c *gin.Context) {

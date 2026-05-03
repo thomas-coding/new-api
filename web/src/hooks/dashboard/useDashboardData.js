@@ -60,6 +60,8 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   const [pieData, setPieData] = useState([{ type: 'null', value: '0' }]);
   const [lineData, setLineData] = useState([]);
   const [modelColors, setModelColors] = useState({});
+  const [usageRankingData, setUsageRankingData] = useState(null);
+  const [usageRankingLoading, setUsageRankingLoading] = useState(false);
 
   // ========== 图表状态 ==========
   const [activeChartTab, setActiveChartTab] = useState('1');
@@ -213,6 +215,25 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     }
   }, [activeUptimeTab]);
 
+  const loadUsageRankingData = useCallback(async () => {
+    setUsageRankingLoading(true);
+    try {
+      const res = await API.get('/api/ranking/usage/today?limit=10');
+      const { success, message, data } = res.data;
+      if (success) {
+        setUsageRankingData(data || null);
+        return data;
+      }
+      showError(message);
+      return null;
+    } catch (err) {
+      console.error(err);
+      return null;
+    } finally {
+      setUsageRankingLoading(false);
+    }
+  }, []);
+
   const getUserData = useCallback(async () => {
     let res = await API.get(`/api/user/self`);
     const { success, message, data } = res.data;
@@ -226,8 +247,9 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   const refresh = useCallback(async () => {
     const data = await loadQuotaData();
     await loadUptimeData();
+    await loadUsageRankingData();
     return data;
-  }, [loadQuotaData, loadUptimeData]);
+  }, [loadQuotaData, loadUptimeData, loadUsageRankingData]);
 
   const handleSearchConfirm = useCallback(
     async (updateChartDataCallback) => {
@@ -279,6 +301,8 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     setLineData,
     modelColors,
     setModelColors,
+    usageRankingData,
+    usageRankingLoading,
 
     // 图表状态
     activeChartTab,
@@ -312,6 +336,7 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     handleCloseModal,
     loadQuotaData,
     loadUptimeData,
+    loadUsageRankingData,
     getUserData,
     refresh,
     handleSearchConfirm,

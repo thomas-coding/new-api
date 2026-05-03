@@ -18,6 +18,8 @@ const (
 	LotteryRewardStatusExpired           = "expired"
 )
 
+var lotteryHighTierNames = []string{"稀有", "史诗", "传说", "神话"}
+
 var (
 	ErrLotteryActivityNotOpen     = errors.New("lottery activity is not open")
 	ErrLotteryActivityNotVisible  = errors.New("lottery activity is not visible")
@@ -169,6 +171,24 @@ func ListLotteryRewardsForUserActivity(ownerUserId int, activityId int) ([]Lotte
 	var rewards []LotteryReward
 	err := DB.Where("owner_user_id = ? AND activity_id = ?", ownerUserId, activityId).
 		Order("created_at desc, id desc").
+		Find(&rewards).Error
+	if err != nil {
+		return nil, err
+	}
+	return rewards, nil
+}
+
+func ListRecentHighTierLotteryWinsForActivity(activityId int, limit int) ([]LotteryReward, error) {
+	if activityId <= 0 {
+		return []LotteryReward{}, nil
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 20
+	}
+	var rewards []LotteryReward
+	err := DB.Where("activity_id = ? AND tier_name IN ?", activityId, lotteryHighTierNames).
+		Order("created_at desc, id desc").
+		Limit(limit).
 		Find(&rewards).Error
 	if err != nil {
 		return nil, err

@@ -52,6 +52,14 @@ type lotteryActivatePayload struct {
 	ActivatedCount int64 `json:"activated_count"`
 }
 
+type lotteryRecentWinPayload []struct {
+	ID             int    `json:"id"`
+	SourceUsername string `json:"source_username"`
+	TierName       string `json:"tier_name"`
+	Amount         int    `json:"amount"`
+	CreatedAt      int64  `json:"created_at"`
+}
+
 func setupLotteryControllerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -200,14 +208,161 @@ func TestLotteryControllerDrawGiftActivateFlow(t *testing.T) {
 	}
 }
 
+func TestLotteryControllerRecentWinsReturnsVisibleHighTiers(t *testing.T) {
+	db := setupLotteryControllerTestDB(t)
+
+	viewer := seedLotteryControllerUser(t, db, 41, "lottery_viewer", common.RoleCommonUser, int(100*common.QuotaPerUnit))
+	rareUser := seedLotteryControllerUser(t, db, 42, "lottery_rare_user", common.RoleCommonUser, int(100*common.QuotaPerUnit))
+	mythUser := seedLotteryControllerUser(t, db, 43, "lottery_myth_user", common.RoleCommonUser, int(100*common.QuotaPerUnit))
+	admin := seedLotteryControllerUser(t, db, 44, "lottery_recent_admin", common.RoleAdminUser, 0)
+
+	activity, err := model.OpenImmediateLotteryActivity(admin.Id, model.LotteryActivityScopePublic, operation_setting.GetNormalizedLotterySetting())
+	if err != nil {
+		t.Fatalf("failed to open lottery activity: %v", err)
+	}
+	now := model.GetDBTimestamp()
+	rewards := []*model.LotteryReward{
+		{
+			ActivityId:      activity.Id,
+			OwnerUserId:     viewer.Id,
+			SourceUserId:    viewer.Id,
+			SourceDrawIndex: 1,
+			TierName:        "普通",
+			Amount:          3,
+			Status:          model.LotteryRewardStatusPendingActivation,
+			AutoActivateAt:  activity.AutoActivateAt,
+			ConsumeStartsAt: activity.ConsumeStartsAt,
+			ExpiresAt:       activity.ExpiresAt,
+		},
+		{
+			ActivityId:      activity.Id,
+			OwnerUserId:     rareUser.Id,
+			SourceUserId:    rareUser.Id,
+			SourceDrawIndex: 1,
+			TierName:        "稀有",
+			Amount:          8,
+			Status:          model.LotteryRewardStatusPendingActivation,
+			AutoActivateAt:  activity.AutoActivateAt,
+			ConsumeStartsAt: activity.ConsumeStartsAt,
+			ExpiresAt:       activity.ExpiresAt,
+		},
+		{
+			ActivityId:      activity.Id,
+			OwnerUserId:     mythUser.Id,
+			SourceUserId:    mythUser.Id,
+			SourceDrawIndex: 1,
+			TierName:        "神话",
+			Amount:          200,
+			Status:          model.LotteryRewardStatusPendingActivation,
+			AutoActivateAt:  activity.AutoActivateAt,
+			ConsumeStartsAt: activity.ConsumeStartsAt,
+			ExpiresAt:       activity.ExpiresAt,
+		},
+	}
+	for i, reward := range rewards {
+		if err := db.Create(reward).Error; err != nil {
+			t.Fatalf("failed to seed reward %d: %v", i, err)
+		}
+		if err := db.Model(reward).Update("created_at", now+int64(i)).Error; err != nil {
+			t.Fatalf("failed to update reward created_at: %v", err)
+		}
+	}
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/lottery/recent-wins", nil, viewer.Id)
+	GetLotteryRecentWins(ctx)
+
+	resp := decodeAPIResponse(t, recorder)
+	if !resp.Success {
+		t.Fatalf("expected recent wins success, got message=%s body=%s", resp.Message, recorder.Body.String())
+	}
+	var wins lotteryRecentWinPayload
+	if err := common.Unmarshal(resp.Data, &wins); err != nil {
+		t.Fatalf("failed to decode recent wins payload: %v", err)
+	}
+	if len(wins) != 2 {
+		t.Fatalf("expected two high-tier wins, got %+v", wins)
+	}
+	if wins[0].TierName != "神话" || wins[0].SourceUsername != mythUser.Username || wins[0].Amount != 200 {
+		t.Fatalf("unexpected newest recent win: %+v", wins[0])
+	}
+	if wins[1].TierName != "稀有" || wins[1].SourceUsername != rareUser.Username {
+		t.Fatalf("unexpected second recent win: %+v", wins[1])
+	}
+}
+
+func TestLotteryControllerRecentWinsDoesNotOpenWeeklyActivity(t *testing.T) {
+	db := setupLotteryControllerTestDB(t)
+
+	current := operation_setting.GetLotterySetting()
+	original := *current
+	original.Tiers = append([]operation_setting.LotteryTierSetting(nil), current.Tiers...)
+	t.Cleanup(func() {
+		restored := original
+		restored.Tiers = append([]operation_setting.LotteryTierSetting(nil), original.Tiers...)
+		*current = restored
+	})
+
+	now := time.Now()
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	*current = operation_setting.LotterySetting{
+		WeeklyDay:            weekday,
+		MythBroadcastEnabled: true,
+		Tiers:                append([]operation_setting.LotteryTierSetting(nil), operation_setting.GetNormalizedLotterySetting().Tiers...),
+	}
+
+	user := seedLotteryControllerUser(t, db, 45, "lottery_recent_readonly", common.RoleCommonUser, int(100*common.QuotaPerUnit))
+
+	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/lottery/recent-wins", nil, user.Id)
+	GetLotteryRecentWins(ctx)
+
+	resp := decodeAPIResponse(t, recorder)
+	if !resp.Success {
+		t.Fatalf("expected recent wins success, got message=%s body=%s", resp.Message, recorder.Body.String())
+	}
+	var wins lotteryRecentWinPayload
+	if err := common.Unmarshal(resp.Data, &wins); err != nil {
+		t.Fatalf("failed to decode recent wins payload: %v", err)
+	}
+	if len(wins) != 0 {
+		t.Fatalf("expected no wins without an active activity, got %+v", wins)
+	}
+
+	var count int64
+	if err := db.Model(&model.LotteryActivity{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count lottery activities: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected recent wins endpoint not to create weekly activity, got %d activities", count)
+	}
+}
+
 func TestLotteryControllerAdminOnlyActivityHiddenFromCommonUser(t *testing.T) {
 	db := setupLotteryControllerTestDB(t)
 
 	commonUser := seedLotteryControllerUser(t, db, 21, "lottery_common", common.RoleCommonUser, int(100*common.QuotaPerUnit))
 	admin := seedLotteryControllerUser(t, db, 22, "lottery_admin_only", common.RoleAdminUser, 0)
 
-	if _, err := model.OpenImmediateLotteryActivity(admin.Id, model.LotteryActivityScopeAdminOnly, operation_setting.GetNormalizedLotterySetting()); err != nil {
+	activity, err := model.OpenImmediateLotteryActivity(admin.Id, model.LotteryActivityScopeAdminOnly, operation_setting.GetNormalizedLotterySetting())
+	if err != nil {
 		t.Fatalf("failed to open admin-only activity: %v", err)
+	}
+	reward := &model.LotteryReward{
+		ActivityId:      activity.Id,
+		OwnerUserId:     admin.Id,
+		SourceUserId:    admin.Id,
+		SourceDrawIndex: 1,
+		TierName:        "神话",
+		Amount:          200,
+		Status:          model.LotteryRewardStatusPendingActivation,
+		AutoActivateAt:  activity.AutoActivateAt,
+		ConsumeStartsAt: activity.ConsumeStartsAt,
+		ExpiresAt:       activity.ExpiresAt,
+	}
+	if err := db.Create(reward).Error; err != nil {
+		t.Fatalf("failed to seed admin-only reward: %v", err)
 	}
 
 	ctx, recorder := newAuthenticatedContext(t, http.MethodGet, "/api/lottery/self/state", nil, commonUser.Id)
@@ -226,6 +381,20 @@ func TestLotteryControllerAdminOnlyActivityHiddenFromCommonUser(t *testing.T) {
 	}
 	if state.Activity != nil {
 		t.Fatalf("expected no visible activity for common user, got %+v", state.Activity)
+	}
+
+	recentCtx, recentRecorder := newAuthenticatedContext(t, http.MethodGet, "/api/lottery/recent-wins", nil, commonUser.Id)
+	GetLotteryRecentWins(recentCtx)
+	recentResp := decodeAPIResponse(t, recentRecorder)
+	if !recentResp.Success {
+		t.Fatalf("expected recent wins success, got message=%s body=%s", recentResp.Message, recentRecorder.Body.String())
+	}
+	var wins lotteryRecentWinPayload
+	if err := common.Unmarshal(recentResp.Data, &wins); err != nil {
+		t.Fatalf("failed to decode hidden recent wins: %v", err)
+	}
+	if len(wins) != 0 {
+		t.Fatalf("expected no admin-only recent wins for common user, got %+v", wins)
 	}
 }
 

@@ -134,6 +134,8 @@ const Lottery = () => {
   const [result, setResult] = useState(null);
   const [drawSeed, setDrawSeed] = useState(0);
   const [stateLoading, setStateLoading] = useState(false);
+  const [recentWins, setRecentWins] = useState([]);
+  const [recentWinsLoading, setRecentWinsLoading] = useState(false);
   const [drawLoading, setDrawLoading] = useState(false);
   const [activateLoading, setActivateLoading] = useState(false);
   const [openLoading, setOpenLoading] = useState('');
@@ -170,6 +172,7 @@ const Lottery = () => {
   };
 
   const rewards = (backendState?.rewards || []).map(decorateReward);
+  const decoratedRecentWins = recentWins.map(decorateReward);
   const summary = backendState?.reward_summary || {};
   const activity = backendState?.activity || null;
   const phase = phaseLabel(activity?.phase, t);
@@ -215,8 +218,30 @@ const Lottery = () => {
     }
   };
 
+  const loadRecentWins = async (silent = false) => {
+    setRecentWinsLoading(true);
+    try {
+      const res = await API.get('/api/lottery/recent-wins');
+      if (res.data?.success) {
+        setRecentWins(res.data.data || []);
+      } else if (!silent) {
+        showError(res.data?.message || t('中奖动态加载失败'));
+      }
+    } catch (error) {
+      if (!silent) {
+        showError(t('中奖动态加载失败'));
+      }
+    } finally {
+      setRecentWinsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    loadState();
+    const loadInitialData = async () => {
+      await loadState();
+      await loadRecentWins(true);
+    };
+    loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -260,6 +285,7 @@ const Lottery = () => {
         }
         revealTimerRef.current = null;
         loadState(true);
+        loadRecentWins(true);
       }, DRAW_DURATION_MS);
     } catch (error) {
       setStage('idle');
@@ -304,6 +330,7 @@ const Lottery = () => {
           scope === 'test' ? t('管理员测试场已开启') : t('大乐透活动已开启'),
         );
         await loadState(true);
+        await loadRecentWins(true);
       } else {
         showError(res.data?.message || t('大乐透活动开启失败'));
       }
@@ -393,7 +420,13 @@ const Lottery = () => {
                   <Tag color='green'>{t('管理员测试资格')}</Tag>
                 ) : null}
               </div>
-              <Button loading={stateLoading} onClick={() => loadState(true)}>
+              <Button
+                loading={stateLoading || recentWinsLoading}
+                onClick={async () => {
+                  await loadState(true);
+                  await loadRecentWins(true);
+                }}
+              >
                 {t('刷新状态')}
               </Button>
             </div>
@@ -649,6 +682,76 @@ const Lottery = () => {
                   </div>
                 </div>
               </div>
+            </div>
+
+            <div className='relative z-[1] mt-6 rounded-[22px] border border-slate-200 bg-white/88 p-5 shadow-sm'>
+              <div className='flex flex-wrap items-center justify-between gap-3'>
+                <div className='flex items-center gap-3'>
+                  <Typography.Text strong>{t('中奖动态')}</Typography.Text>
+                  <Tag color='orange'>{t('稀有以上')}</Tag>
+                </div>
+                <Typography.Text type='tertiary' size='small'>
+                  {recentWinsLoading
+                    ? t('刷新中')
+                    : t('最近 {{count}} 条', {
+                        count: decoratedRecentWins.length,
+                      })}
+                </Typography.Text>
+              </div>
+
+              {decoratedRecentWins.length === 0 ? (
+                <div className='mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600'>
+                  {t('等待第一位幸运儿')}
+                </div>
+              ) : (
+                <div className='mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4'>
+                  {decoratedRecentWins.map((win) => {
+                    const WinIcon = win.icon || Gift;
+                    return (
+                      <div
+                        key={win.id}
+                        className='rounded-[18px] border bg-white/96 p-4'
+                        style={{
+                          borderColor: `${win.accent}35`,
+                          boxShadow: `0 12px 28px ${win.glow}`,
+                        }}
+                      >
+                        <div className='flex items-start justify-between gap-3'>
+                          <div className='min-w-0'>
+                            <div className='truncate text-sm font-semibold text-slate-900'>
+                              {win.source_username || t('匿名用户')}
+                            </div>
+                            <div className='mt-1 text-xs text-slate-500'>
+                              {formatTime(win.created_at)}
+                            </div>
+                          </div>
+                          <div
+                            className='flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white'
+                            style={{ color: win.accent }}
+                          >
+                            <WinIcon size={18} />
+                          </div>
+                        </div>
+                        <div
+                          className='mt-4 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold'
+                          style={{
+                            color: win.accent,
+                            borderColor: `${win.accent}4d`,
+                          }}
+                        >
+                          <span>{win.name}</span>
+                        </div>
+                        <div className='mt-3 text-[26px] font-bold leading-none text-slate-900'>
+                          {win.amount}
+                          <span className='ml-2 text-sm font-medium text-slate-500'>
+                            {t('乐透券')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className='relative z-[1] mt-6 rounded-[22px] border border-slate-200 bg-white/88 p-5 shadow-sm'>

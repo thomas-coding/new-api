@@ -166,6 +166,7 @@ func SetApiRouter(router *gin.Engine) {
 		lotteryRoute.Use(middleware.UserAuth())
 		{
 			lotteryRoute.GET("/self/state", controller.GetLotterySelfState)
+			lotteryRoute.GET("/recent-wins", controller.GetLotteryRecentWins)
 			lotteryRoute.POST("/self/draw", controller.DrawLotteryReward)
 			lotteryRoute.POST("/self/activate", controller.ActivateLotteryRewards)
 			lotteryRoute.POST("/self/gift", controller.GiftLotteryReward)
@@ -328,6 +329,11 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.Use(middleware.CORS(), middleware.CriticalRateLimit())
 		{
 			logRoute.GET("/token", middleware.TokenAuthReadOnly(), controller.GetLogByKey)
+		}
+		rankingRoute := apiRouter.Group("/ranking")
+		rankingRoute.Use(middleware.UserAuth())
+		{
+			rankingRoute.GET("/usage/today", controller.GetTodayUsageRanking)
 		}
 		groupRoute := apiRouter.Group("/group")
 		groupRoute.Use(middleware.AdminAuth())

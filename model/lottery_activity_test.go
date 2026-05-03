@@ -352,6 +352,76 @@ func TestDrawGiftAndActivateLotteryRewardFlow(t *testing.T) {
 	}
 }
 
+func TestListRecentHighTierLotteryWinsForActivity(t *testing.T) {
+	setupLotteryTestDB(t)
+
+	now := time.Now().Unix()
+	activity := &LotteryActivity{
+		Scope:           LotteryActivityScopePublic,
+		OpenMode:        LotteryActivityOpenModeImmediate,
+		Status:          LotteryActivityStatusActive,
+		DrawDate:        "2026-04-10",
+		DrawStartsAt:    now - 3600,
+		DrawEndsAt:      now + 3600,
+		AutoActivateAt:  now + 3600,
+		ConsumeStartsAt: now + 3600,
+		ConsumeEndsAt:   now + 86400,
+		ExpiresAt:       now + 86400,
+		ConfigSnapshot:  `{"myth_broadcast_enabled":true,"tiers":[{"name":"普通","amount":3,"probability":82},{"name":"稀有","amount":8,"probability":13},{"name":"史诗","amount":20,"probability":4},{"name":"传说","amount":50,"probability":0.8},{"name":"神话","amount":200,"probability":0.2}]}`,
+		CreatedBy:       1,
+	}
+	if err := DB.Create(activity).Error; err != nil {
+		t.Fatalf("failed to seed activity: %v", err)
+	}
+
+	createReward := func(drawIndex int, tierName string, amount int, createdAt int64) *LotteryReward {
+		t.Helper()
+		reward := &LotteryReward{
+			ActivityId:      activity.Id,
+			OwnerUserId:     drawIndex,
+			SourceUserId:    drawIndex,
+			SourceDrawIndex: drawIndex,
+			TierName:        tierName,
+			Amount:          amount,
+			Status:          LotteryRewardStatusPendingActivation,
+			AutoActivateAt:  activity.AutoActivateAt,
+			ConsumeStartsAt: activity.ConsumeStartsAt,
+			ExpiresAt:       activity.ExpiresAt,
+		}
+		if err := DB.Create(reward).Error; err != nil {
+			t.Fatalf("failed to seed %s reward: %v", tierName, err)
+		}
+		if err := DB.Model(reward).Update("created_at", createdAt).Error; err != nil {
+			t.Fatalf("failed to update reward created_at: %v", err)
+		}
+		reward.CreatedAt = createdAt
+		return reward
+	}
+
+	createReward(1, "普通", 3, now+1)
+	rare := createReward(2, "稀有", 8, now+2)
+	epic := createReward(3, "史诗", 20, now+3)
+	legendary := createReward(4, "传说", 50, now+4)
+	mythic := createReward(5, "神话", 200, now+5)
+
+	rewards, err := ListRecentHighTierLotteryWinsForActivity(activity.Id, 3)
+	if err != nil {
+		t.Fatalf("failed to list recent high tier wins: %v", err)
+	}
+	if len(rewards) != 3 {
+		t.Fatalf("expected 3 high tier rewards, got %d", len(rewards))
+	}
+	expectedIds := []int{mythic.Id, legendary.Id, epic.Id}
+	for i, expectedId := range expectedIds {
+		if rewards[i].Id != expectedId {
+			t.Fatalf("expected reward id %d at index %d, got %d; rare id was %d", expectedId, i, rewards[i].Id, rare.Id)
+		}
+		if rewards[i].TierName == "普通" {
+			t.Fatalf("expected ordinary rewards to be excluded, got %+v", rewards[i])
+		}
+	}
+}
+
 func TestLotteryQuotaPreConsumeSettleAndRefund(t *testing.T) {
 	setupLotteryTestDB(t)
 
