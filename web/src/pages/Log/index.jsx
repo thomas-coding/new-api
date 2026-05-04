@@ -22,7 +22,7 @@ import UsageLogsTable from '../../components/table/usage-logs';
 
 const Token = ({ scope = 'self' }) => (
   <div className='mt-[60px] px-2'>
-    <UsageLogsTable scope={scope} />
+    <UsageLogsTable key={scope} scope={scope} />
   </div>
 );
 

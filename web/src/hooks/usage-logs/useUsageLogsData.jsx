@@ -302,10 +302,9 @@ export const useLogsData = ({ scope = 'self' } = {}) => {
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
-    if (isAllLogsMode && !isAdminUser) {
-      url = `/api/log/all/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
-    }
+    let url = isAllLogsMode
+      ? `/api/log/all/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`
+      : `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -321,7 +320,7 @@ export const useLogsData = ({ scope = 'self' } = {}) => {
       return;
     }
     setLoadingStat(true);
-    if (canViewAdminDetails) {
+    if (isAllLogsMode) {
       await getLogStat();
     } else {
       await getLogSelfStat();
@@ -705,9 +704,7 @@ export const useLogsData = ({ scope = 'self' } = {}) => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
-    } else if (isAllLogsMode) {
+    if (isAllLogsMode) {
       url = `/api/log/all?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
     } else {
       url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
@@ -738,7 +735,7 @@ export const useLogsData = ({ scope = 'self' } = {}) => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    loadLogs(activePage, size)
+    loadLogs(1, size)
       .then()
       .catch((reason) => {
         showError(reason);
@@ -766,20 +763,25 @@ export const useLogsData = ({ scope = 'self' } = {}) => {
   useEffect(() => {
     const localPageSize =
       parseInt(localStorage.getItem('page-size')) || ITEMS_PER_PAGE;
+    setLogs([]);
+    setExpandData({});
+    setLogCount(0);
+    setActivePage(1);
+    setShowStat(false);
     setPageSize(localPageSize);
-    loadLogs(activePage, localPageSize)
+    loadLogs(1, localPageSize)
       .then()
       .catch((reason) => {
         showError(reason);
       });
-  }, []);
+  }, [scope]);
 
   // Initialize statistics when formApi is available
   useEffect(() => {
     if (formApi) {
       handleEyeClick();
     }
-  }, [formApi]);
+  }, [formApi, scope]);
 
   // Check if any record has expandable content
   const hasExpandableRows = () => {
