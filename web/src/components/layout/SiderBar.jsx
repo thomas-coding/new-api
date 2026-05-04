@@ -41,6 +41,7 @@ const routerMap = {
   user: '/console/user',
   subscription: '/console/subscription',
   log: '/console/log',
+  all_log: '/console/all-log',
   midjourney: '/console/midjourney',
   setting: '/console/setting',
   about: '/about',
@@ -90,6 +91,11 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         text: t('使用日志'),
         itemKey: 'log',
         to: '/log',
+      },
+      {
+        text: t('全部日志'),
+        itemKey: 'all_log',
+        to: '/all-log',
       },
       {
         text: t('绘图日志'),

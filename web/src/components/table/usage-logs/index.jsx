@@ -29,8 +29,8 @@ import { useLogsData } from '../../../hooks/usage-logs/useUsageLogsData';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 import { createCardProPagination } from '../../../helpers/utils';
 
-const LogsPage = () => {
-  const logsData = useLogsData();
+const LogsPage = ({ scope = 'self' }) => {
+  const logsData = useLogsData({ scope });
   const isMobile = useIsMobile();
 
   return (

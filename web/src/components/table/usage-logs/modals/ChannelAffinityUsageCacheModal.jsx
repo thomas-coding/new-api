@@ -59,6 +59,8 @@ const ChannelAffinityUsageCacheModal = ({
   showChannelAffinityUsageCacheModal,
   setShowChannelAffinityUsageCacheModal,
   channelAffinityUsageCacheTarget,
+  isAdminUser,
+  isAllLogsMode,
 }) => {
   const [loading, setLoading] = useState(false);
   const [stats, setStats] = useState(null);
@@ -92,7 +94,11 @@ const ChannelAffinityUsageCacheModal = ({
     setLoading(true);
     (async () => {
       try {
-        const res = await API.get('/api/log/channel_affinity_usage_cache', {
+        const url =
+          isAllLogsMode && !isAdminUser
+            ? '/api/log/all/channel_affinity_usage_cache'
+            : '/api/log/channel_affinity_usage_cache';
+        const res = await API.get(url, {
           params,
           disableDuplicate: true,
         });
@@ -119,6 +125,8 @@ const ChannelAffinityUsageCacheModal = ({
     params.using_group,
     params.key_hint,
     params.key_fp,
+    isAdminUser,
+    isAllLogsMode,
     t,
   ]);
 
@@ -161,7 +169,10 @@ const ChannelAffinityUsageCacheModal = ({
       data.push({ key: t('TTL（秒）'), value: windowSeconds });
     }
     if (total > 0) {
-      data.push({ key: t('命中率'), value: `${hit}/${total} (${formatRate(hit, total)})` });
+      data.push({
+        key: t('命中率'),
+        value: `${hit}/${total} (${formatRate(hit, total)})`,
+      });
     }
     if (lastSeenAt > 0) {
       data.push({ key: t('最近一次'), value: timestamp2string(lastSeenAt) });
@@ -178,7 +189,10 @@ const ChannelAffinityUsageCacheModal = ({
         });
       }
       if (promptCacheHitTokens > 0) {
-        data.push({ key: t('Prompt cache hit tokens'), value: promptCacheHitTokens });
+        data.push({
+          key: t('Prompt cache hit tokens'),
+          value: promptCacheHitTokens,
+        });
       }
       if (completionTokens > 0) {
         data.push({ key: t('Completion tokens'), value: completionTokens });
@@ -207,18 +221,15 @@ const ChannelAffinityUsageCacheModal = ({
           <Text type='tertiary' size='small'>
             {t(
               '命中判定：usage 中存在 cached tokens（例如 cached_tokens/prompt_cache_hit_tokens）即视为命中。',
-            )}
-            {' '}
+            )}{' '}
             {t(
               'Cached tokens 占比口径由后端返回：Claude 语义按 cached/(prompt+cached)，其余按 cached/prompt。',
+            )}{' '}
+            {t(
+              '当前仅 OpenAI / Claude 语义支持缓存 token 统计，其他通道将隐藏 token 相关字段。',
             )}
-            {' '}
-            {t('当前仅 OpenAI / Claude 语义支持缓存 token 统计，其他通道将隐藏 token 相关字段。')}
             {stats && !supportsTokenStats ? (
-              <>
-                {' '}
-                {t('该记录不包含可用的 token 统计口径。')}
-              </>
+              <> {t('该记录不包含可用的 token 统计口径。')}</>
             ) : null}
           </Text>
         </div>

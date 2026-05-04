@@ -28,6 +28,21 @@ import ScrollableContainer from '../common/ui/ScrollableContainer';
 import { formatTokenMillions } from '../../helpers/usageRanking';
 
 const rankColors = ['amber', 'grey', 'orange'];
+const topRowStyles = {
+  1: 'py-2.5',
+  2: 'py-2',
+  3: 'py-2',
+};
+const topNameStyles = {
+  1: 'text-[15px] font-semibold text-gray-950',
+  2: 'text-sm font-semibold text-gray-900',
+  3: 'text-sm font-semibold text-gray-900',
+};
+const topValueStyles = {
+  1: 'text-[15px] font-semibold text-gray-900',
+  2: 'text-sm font-semibold text-gray-800',
+  3: 'text-sm font-semibold text-gray-800',
+};
 
 const TodayUsageRankingPanel = ({
   rankingData,
@@ -60,40 +75,48 @@ const TodayUsageRankingPanel = ({
         <ScrollableContainer maxHeight='24rem'>
           {top.length > 0 ? (
             <div className='p-2 space-y-2'>
-              {top.map((item) => (
-                <div
-                  key={item.user_id}
-                  className={`flex items-center gap-3 rounded-lg px-2 py-2 transition-colors ${
-                    item.is_me
-                      ? 'bg-blue-50 ring-1 ring-blue-100'
-                      : 'hover:bg-white'
-                  }`}
-                >
-                  <Avatar
-                    size='extra-small'
-                    color={rankColors[item.rank - 1] || 'blue'}
+              {top.map((item) => {
+                return (
+                  <div
+                    key={item.user_id}
+                    className={`flex items-center gap-3 rounded-lg px-2.5 transition-colors ${
+                      topRowStyles[item.rank] || 'py-2'
+                    } ${item.is_me ? 'bg-blue-50' : 'hover:bg-white'}`}
                   >
-                    {item.rank}
-                  </Avatar>
-                  <div className='min-w-0 flex-1'>
-                    <div className='flex items-center justify-between gap-2'>
-                      <span className='truncate text-sm font-medium text-gray-900'>
-                        {item.username || `User ${item.user_id}`}
-                      </span>
-                      {item.is_me && (
-                        <Tag color='blue' size='small' shape='circle'>
-                          {t('我')}
-                        </Tag>
-                      )}
-                    </div>
-                    <div className='mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500'>
-                      <span>
-                        {t('Token消耗')} {formatTokenMillions(item.token_count)}
+                    <Avatar
+                      size={item.rank === 1 ? 'small' : 'extra-small'}
+                      color={rankColors[item.rank - 1] || 'blue'}
+                    >
+                      {item.rank}
+                    </Avatar>
+                    <div className='flex min-w-0 flex-1 items-center justify-between gap-3'>
+                      <div className='flex min-w-0 items-center gap-2'>
+                        <span
+                          className={`min-w-0 truncate ${
+                            topNameStyles[item.rank] ||
+                            'text-sm font-medium text-gray-900'
+                          }`}
+                        >
+                          {item.username || `User ${item.user_id}`}
+                        </span>
+                        {item.is_me && (
+                          <Tag color='blue' size='small' shape='circle'>
+                            {t('我')}
+                          </Tag>
+                        )}
+                      </div>
+                      <span
+                        className={`flex-shrink-0 whitespace-nowrap ${
+                          topValueStyles[item.rank] ||
+                          'text-sm font-semibold text-gray-700'
+                        }`}
+                      >
+                        {formatTokenMillions(item.token_count)}
                       </span>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className='flex justify-center items-center min-h-[20rem] w-full'>

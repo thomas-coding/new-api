@@ -32,6 +32,7 @@ const ColumnSelectorModal = ({
   setBillingDisplayMode,
   COLUMN_KEYS,
   isAdminUser,
+  canViewAdminDetails,
   copyText,
   showUserInfoFunc,
   t,
@@ -51,6 +52,7 @@ const ColumnSelectorModal = ({
     copyText,
     showUserInfoFunc,
     isAdminUser,
+    canViewAdminDetails,
     billingDisplayMode,
   });
 
@@ -73,7 +75,9 @@ const ColumnSelectorModal = ({
     >
       <div style={{ marginBottom: 20 }}>
         <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 8, fontWeight: 600 }}>{t('计费显示模式')}</div>
+          <div style={{ marginBottom: 8, fontWeight: 600 }}>
+            {t('计费显示模式')}
+          </div>
           <RadioGroup
             type='button'
             value={billingDisplayMode}
@@ -103,9 +107,9 @@ const ColumnSelectorModal = ({
         style={{ border: '1px solid var(--semi-color-border)' }}
       >
         {allColumns.map((column) => {
-          // Skip admin-only columns for non-admin users
+          // Skip full-log/admin columns for the personal log view.
           if (
-            !isAdminUser &&
+            !canViewAdminDetails &&
             (column.key === COLUMN_KEYS.CHANNEL ||
               column.key === COLUMN_KEYS.USERNAME ||
               column.key === COLUMN_KEYS.RETRY)

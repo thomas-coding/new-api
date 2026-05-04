@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -10,11 +12,32 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const allLogsMaxRangeSeconds int64 = 31 * 24 * 60 * 60
+
 func GetAllLogs(c *gin.Context) {
+	getAllLogs(c, false)
+}
+
+func GetAllLogsForUsers(c *gin.Context) {
+	getAllLogs(c, true)
+}
+
+func getAllLogs(c *gin.Context, enforceRange bool) {
 	pageInfo := common.GetPageQuery(c)
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if enforceRange {
+		var err error
+		startTimestamp, endTimestamp, err = normalizeAllLogsRange(startTimestamp, endTimestamp)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	}
 	username := c.Query("username")
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
@@ -94,9 +117,28 @@ func GetLogByKey(c *gin.Context) {
 }
 
 func GetLogsStat(c *gin.Context) {
+	getLogsStat(c, false)
+}
+
+func GetLogsStatForUsers(c *gin.Context) {
+	getLogsStat(c, true)
+}
+
+func getLogsStat(c *gin.Context, enforceRange bool) {
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
+	if enforceRange {
+		var err error
+		startTimestamp, endTimestamp, err = normalizeAllLogsRange(startTimestamp, endTimestamp)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
+	}
 	tokenName := c.Query("token_name")
 	username := c.Query("username")
 	modelName := c.Query("model_name")
@@ -118,6 +160,20 @@ func GetLogsStat(c *gin.Context) {
 		},
 	})
 	return
+}
+
+func normalizeAllLogsRange(startTimestamp int64, endTimestamp int64) (int64, int64, error) {
+	if startTimestamp == 0 || endTimestamp == 0 {
+		start, end := model.GetBeijingDayRange(time.Now())
+		return start, end, nil
+	}
+	if endTimestamp < startTimestamp {
+		return 0, 0, errors.New("结束时间不能早于开始时间")
+	}
+	if endTimestamp-startTimestamp > allLogsMaxRangeSeconds {
+		return 0, 0, errors.New("全部日志单次查询时间范围不能超过 31 天")
+	}
+	return startTimestamp, endTimestamp, nil
 }
 
 func GetLogsSelfStat(c *gin.Context) {

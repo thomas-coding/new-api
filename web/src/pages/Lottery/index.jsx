@@ -82,6 +82,24 @@ function formatTime(ts) {
   return ts ? new Date(ts * 1000).toLocaleString() : '--';
 }
 
+function formatBeijingDate(ts) {
+  if (!ts) {
+    return '--';
+  }
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(ts * 1000));
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function formatAmount(value) {
   const num = Number(value || 0);
   if (Number.isNaN(num)) {
@@ -476,26 +494,11 @@ const Lottery = () => {
                   {activity ? (
                     <div className='mt-4 grid gap-2 text-sm text-slate-600'>
                       <div>
-                        {t('活动范围')}：
-                        {activity.scope === 'admin_only'
-                          ? t('管理员测试场')
-                          : t('公开场')}
-                      </div>
-                      <div>
                         {t('抽奖日')}：{activity.draw_date || '--'}
                       </div>
                       <div>
-                        {t('抽奖截止')}：{formatTime(activity.draw_ends_at)}
-                      </div>
-                      <div>
-                        {t('自动激活')}：{formatTime(activity.auto_activate_at)}
-                      </div>
-                      <div>
-                        {t('消费开始')}：
-                        {formatTime(activity.consume_starts_at)}
-                      </div>
-                      <div>
-                        {t('活动失效')}：{formatTime(activity.expires_at)}
+                        {t('使用日')}：
+                        {formatBeijingDate(activity.consume_starts_at)}
                       </div>
                     </div>
                   ) : (
@@ -507,14 +510,6 @@ const Lottery = () => {
                           )}
                     </div>
                   )}
-
-                  {activity ? (
-                    <div className='mt-4 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700'>
-                      {t(
-                        '当前卡面展示的是本场已锁定奖池。若你刚修改了大乐透设置，新金额和概率会从下一场活动起生效。',
-                      )}
-                    </div>
-                  ) : null}
 
                   <div className='mt-4 flex flex-wrap gap-3'>
                     {summary.activatable_count > 0 ? (

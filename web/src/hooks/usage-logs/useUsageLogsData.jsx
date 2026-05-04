@@ -40,7 +40,7 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 
-export const useLogsData = () => {
+export const useLogsData = ({ scope = 'self' } = {}) => {
   const { t } = useTranslation();
 
   // Define column keys for selection
@@ -74,12 +74,18 @@ export const useLogsData = () => {
 
   // User and admin
   const isAdminUser = isAdmin();
+  const isAllLogsMode = scope === 'all';
+  const canViewAdminDetails = isAdminUser || isAllLogsMode;
   // Role-specific storage key to prevent different roles from overwriting each other
-  const STORAGE_KEY = isAdminUser
-    ? 'logs-table-columns-admin'
+  const STORAGE_KEY = canViewAdminDetails
+    ? isAdminUser
+      ? 'logs-table-columns-admin'
+      : 'logs-table-columns-all'
     : 'logs-table-columns-user';
-  const BILLING_DISPLAY_MODE_STORAGE_KEY = isAdminUser
-    ? 'logs-billing-display-mode-admin'
+  const BILLING_DISPLAY_MODE_STORAGE_KEY = canViewAdminDetails
+    ? isAdminUser
+      ? 'logs-billing-display-mode-admin'
+      : 'logs-billing-display-mode-all'
     : 'logs-billing-display-mode-user';
 
   // Statistics state
@@ -109,8 +115,8 @@ export const useLogsData = () => {
   const getDefaultColumnVisibility = () => {
     return {
       [COLUMN_KEYS.TIME]: true,
-      [COLUMN_KEYS.CHANNEL]: isAdminUser,
-      [COLUMN_KEYS.USERNAME]: isAdminUser,
+      [COLUMN_KEYS.CHANNEL]: canViewAdminDetails,
+      [COLUMN_KEYS.USERNAME]: canViewAdminDetails,
       [COLUMN_KEYS.TOKEN]: true,
       [COLUMN_KEYS.GROUP]: true,
       [COLUMN_KEYS.TYPE]: true,
@@ -119,7 +125,7 @@ export const useLogsData = () => {
       [COLUMN_KEYS.PROMPT]: true,
       [COLUMN_KEYS.COMPLETION]: true,
       [COLUMN_KEYS.COST]: true,
-      [COLUMN_KEYS.RETRY]: isAdminUser,
+      [COLUMN_KEYS.RETRY]: canViewAdminDetails,
       [COLUMN_KEYS.IP]: true,
       [COLUMN_KEYS.DETAILS]: true,
     };
@@ -137,7 +143,7 @@ export const useLogsData = () => {
       const parsed = JSON.parse(savedColumns);
       const merged = { ...defaults, ...parsed };
 
-      if (!isAdminUser) {
+      if (!canViewAdminDetails) {
         merged[COLUMN_KEYS.CHANNEL] = false;
         merged[COLUMN_KEYS.USERNAME] = false;
         merged[COLUMN_KEYS.RETRY] = false;
@@ -161,7 +167,9 @@ export const useLogsData = () => {
   };
 
   // Column visibility state
-  const [visibleColumns, setVisibleColumns] = useState(getInitialVisibleColumns);
+  const [visibleColumns, setVisibleColumns] = useState(
+    getInitialVisibleColumns,
+  );
   const [showColumnSelector, setShowColumnSelector] = useState(false);
   const [billingDisplayMode, setBillingDisplayMode] = useState(
     getInitialBillingDisplayMode,
@@ -205,7 +213,7 @@ export const useLogsData = () => {
         (key === COLUMN_KEYS.CHANNEL ||
           key === COLUMN_KEYS.USERNAME ||
           key === COLUMN_KEYS.RETRY) &&
-        !isAdminUser
+        !canViewAdminDetails
       ) {
         updatedColumns[key] = false;
       } else {
@@ -295,6 +303,9 @@ export const useLogsData = () => {
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
     let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    if (isAllLogsMode && !isAdminUser) {
+      url = `/api/log/all/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}`;
+    }
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -310,7 +321,7 @@ export const useLogsData = () => {
       return;
     }
     setLoadingStat(true);
-    if (isAdminUser) {
+    if (canViewAdminDetails) {
       await getLogStat();
     } else {
       await getLogSelfStat();
@@ -364,7 +375,10 @@ export const useLogsData = () => {
       let other = getLogOther(logs[i].other);
       let expandDataLocal = [];
 
-      if (isAdminUser && (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)) {
+      if (
+        canViewAdminDetails &&
+        (logs[i].type === 0 || logs[i].type === 2 || logs[i].type === 6)
+      ) {
         expandDataLocal.push({
           key: t('渠道信息'),
           value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
@@ -450,7 +464,7 @@ export const useLogsData = () => {
             value: logs[i].content,
           });
         }
-        if (isAdminUser && other?.reject_reason) {
+        if (canViewAdminDetails && other?.reject_reason) {
           expandDataLocal.push({
             key: t('拦截原因'),
             value: other.reject_reason,
@@ -571,7 +585,14 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('失败原因'),
             value: (
-              <div style={{ maxWidth: 600, whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.6 }}>
+              <div
+                style={{
+                  maxWidth: 600,
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  lineHeight: 1.6,
+                }}
+              >
                 {other.reason}
               </div>
             ),
@@ -633,13 +654,13 @@ export const useLogsData = () => {
           ),
         });
       }
-      if (isAdminUser && logs[i].type !== 6) {
+      if (canViewAdminDetails && logs[i].type !== 6) {
         expandDataLocal.push({
           key: t('请求转换'),
           value: requestConversionDisplayValue(other?.request_conversion),
         });
       }
-      if (isAdminUser && logs[i].type !== 6) {
+      if (canViewAdminDetails && logs[i].type !== 6) {
         let localCountMode = '';
         if (other?.admin_info?.local_count_tokens) {
           localCountMode = t('本地计费');
@@ -686,6 +707,8 @@ export const useLogsData = () => {
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
     if (isAdminUser) {
       url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
+    } else if (isAllLogsMode) {
+      url = `/api/log/all?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&group=${group}&request_id=${request_id}`;
     } else {
       url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
     }
@@ -778,6 +801,8 @@ export const useLogsData = () => {
     logType,
     stat,
     isAdminUser,
+    isAllLogsMode,
+    canViewAdminDetails,
 
     // Form state
     formApi,

@@ -322,6 +322,14 @@ function App() {
           }
         />
         <Route
+          path='/console/all-log'
+          element={
+            <PrivateRoute>
+              <Log scope='all' />
+            </PrivateRoute>
+          }
+        />
+        <Route
           path='/console'
           element={
             <PrivateRoute>

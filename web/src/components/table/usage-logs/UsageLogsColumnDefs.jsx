@@ -466,6 +466,7 @@ export const getLogsColumns = ({
   showUserInfoFunc,
   openChannelAffinityUsageCacheModal,
   isAdminUser,
+  canViewAdminDetails = isAdminUser,
   billingDisplayMode = 'price',
 }) => {
   return [
@@ -503,7 +504,7 @@ export const getLogsColumns = ({
           }
         }
 
-        return isAdminUser &&
+        return canViewAdminDetails &&
           (record.type === 0 ||
             record.type === 2 ||
             record.type === 5 ||
@@ -573,7 +574,7 @@ export const getLogsColumns = ({
       title: t('用户'),
       dataIndex: 'username',
       render: (text, record, index) => {
-        return isAdminUser ? (
+        return canViewAdminDetails ? (
           <div>
             <Avatar
               size='extra-small'
@@ -581,7 +582,9 @@ export const getLogsColumns = ({
               style={{ marginRight: 4 }}
               onClick={(event) => {
                 event.stopPropagation();
-                showUserInfoFunc(record.user_id);
+                if (isAdminUser) {
+                  showUserInfoFunc(record.user_id);
+                }
               }}
             >
               {typeof text === 'string' && text.slice(0, 1)}
@@ -875,7 +878,7 @@ export const getLogsColumns = ({
             }
           }
         }
-        return isAdminUser ? <div>{content}</div> : <></>;
+        return canViewAdminDetails ? <div>{content}</div> : <></>;
       },
     },
     {
