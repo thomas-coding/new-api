@@ -314,7 +314,7 @@ func isArrouteCliproxyTarget(urls ...string) bool {
 			continue
 		}
 		port := strings.TrimSpace(parsed.Port())
-		if port == "18317" {
+		if port == "18317" || port == "18000" {
 			return true
 		}
 	}

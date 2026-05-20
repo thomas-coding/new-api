@@ -213,6 +213,22 @@ func TestApplyArrouteAffinityHeader_SetsHeaderForCliproxyTargets(t *testing.T) {
 	require.Equal(t, "user:15", headers.Get(arrouteAffinityHeader))
 }
 
+func TestApplyArrouteAffinityHeader_SetsHeaderForGrok2APITargets(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	info := &relaycommon.RelayInfo{
+		UserId: 15,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "http://43.153.119.162:18000",
+		},
+	}
+
+	applyArrouteAffinityHeader(headers, info, "http://43.153.119.162:18000/v1/responses")
+
+	require.Equal(t, "user:15", headers.Get(arrouteAffinityHeader))
+}
+
 func TestApplyArrouteAffinityHeader_SkipsNonCliproxyTargets(t *testing.T) {
 	t.Parallel()
 
@@ -225,6 +241,22 @@ func TestApplyArrouteAffinityHeader_SkipsNonCliproxyTargets(t *testing.T) {
 	}
 
 	applyArrouteAffinityHeader(headers, info, "https://api.openai.com/v1/responses")
+
+	require.Empty(t, headers.Get(arrouteAffinityHeader))
+}
+
+func TestApplyArrouteAffinityHeader_SkipsPort80Targets(t *testing.T) {
+	t.Parallel()
+
+	headers := make(http.Header)
+	info := &relaycommon.RelayInfo{
+		UserId: 15,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl: "http://grok2api",
+		},
+	}
+
+	applyArrouteAffinityHeader(headers, info, "http://grok2api/v1/responses")
 
 	require.Empty(t, headers.Get(arrouteAffinityHeader))
 }
@@ -305,8 +337,6 @@ func TestProcessHeaderOverride_PassthroughSkipsTransparentSnapshotHeaders(t *tes
 }
 
 func TestApplyTransparentCodexSnapshotHeaders_UsesAllowlistAndRawQuery(t *testing.T) {
-	t.Parallel()
-
 	originalEnabled := model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled
 	model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = true
 	t.Cleanup(func() {
@@ -360,8 +390,6 @@ func TestApplyTransparentCodexSnapshotHeaders_UsesAllowlistAndRawQuery(t *testin
 }
 
 func TestApplyTransparentCodexSnapshotHeaders_StripsRedundantInternalHeaders(t *testing.T) {
-	t.Parallel()
-
 	originalEnabled := model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled
 	model_setting.GetGlobalSettings().TransparentCodexRelayV1Enabled = true
 	t.Cleanup(func() {
